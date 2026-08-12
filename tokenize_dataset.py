@@ -115,7 +115,7 @@ def write_bin(tokens: np.ndarray, path: Path) -> None:
 def tokenize(
     input_path: Path,
     out_dir: Path,
-    split_ratio: float = 0.90,
+    split_ratio: float = 0.99,
     add_eot: bool = True,
 ) -> dict:
     """
@@ -400,7 +400,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--split",
         type=float,
-        default=0.90,
+        default=0.99,
         metavar="RATIO",
         help="Fraction of tokens to use for training (rest goes to validation)",
     )
