@@ -1,11 +1,11 @@
 <div align="center">
 
-# 🧠 nano_brain
+# 🧠 nanorush
 
-**A clean GPT-2-class language model trained from scratch in PyTorch.**  
-Designed to run on a single consumer GPU (12 GB VRAM) for 2–4 weeks and produce a genuinely capable 124M-parameter model.
+**A clean GPT-class language model trained from scratch in PyTorch.**  
+Custom-trained BPE tokenizer, full AMP training, EMA, gradient checkpointing, and a complete pretraining pipeline.
 
-[**📖 Read the Masterclass Technical Wiki**](https://github.com/Amogh1221/NanoBrain/wiki)  
+[**📖 Read the Masterclass Technical Wiki**](https://github.com/Amogh1221/nanorush/wiki)  
 *An exhaustive, first-principles textbook covering LLM theory, Transformer math, FlashAttention, CUDA memory hierarchy, and codebase implementation.*
 
 </div>
@@ -14,48 +14,51 @@ Designed to run on a single consumer GPU (12 GB VRAM) for 2–4 weeks and produc
 
 ## Overview
 
-nano_brain is an end-to-end LLM pretraining pipeline:
+nanorush is an end-to-end LLM pretraining pipeline:
 
 ```
-build_dataset.py  →  tokenize_dataset.py  →  train.py  →  generate.py
-   (collect data)       (binarise data)       (train)       (inference)
+build_dataset.py  →  train_tokenizer.py  →  tokenize_dataset.py  →  train.py  →  generate.py
+   (download data)     (train BPE tokenizer)    (binarise data)      (train)    (inference)
 ```
 
-It covers every step: multi-source dataset collection, pre-tokenisation, training with full AMP/gradient accumulation/EMA/checkpointing, rich terminal + file logging, and interactive text generation.
+It covers every step: dataset collection from HuggingFace, custom BPE tokenizer training with special tokens, pre-tokenisation, training with full AMP/gradient accumulation/EMA/checkpointing, rich terminal + file logging, and interactive text generation.
 
 ---
 
-## Architecture — GPT-2 Small (124M parameters)
+## Architecture — Custom ~283M GPT (36 layers)
 
 | Component | Specification |
 |---|---|
-| Layers (`n_layer`) | 12 |
+| Layers (`n_layer`) | 36 |
 | Attention heads (`n_head`) | 12 |
 | Embedding dim (`n_embd`) | 768 |
 | Head dim | 64 |
-| Context length (`block_size`) | 1024 tokens |
+| Context length (`block_size`) | 4096 tokens |
 | Feed-forward | 4× expansion, GELU (tanh approx.) |
-| Vocabulary | 50,258 (GPT-2 BPE, via tiktoken) |
-| Parameters | ~124M |
+| Vocabulary | 32,768 (custom-trained BPE, via `tokenizers`) |
+| Parameters | ~283M |
 | Attention | Flash Attention via `scaled_dot_product_attention` |
 | Positional encoding | Learned absolute (wpe) |
 
-This matches the GPT-2 Small architecture exactly. It is the proven sweet spot for a **12 GB VRAM GPU** — it uses ~10–11 GB, leaving headroom for activations.
+The custom 32,768-vocab tokenizer includes **206 guaranteed special tokens** beyond the standard BPE merges:
+- `<|endoftext|>` — document separator (ID 0)
+- Indentation spaces: 2, 4, 8, 12, 16 spaces — for Python indentation
+- Double-digit numbers: `"00"` through `"99"` — clean number tokenization
+- Space-prefixed double-digit numbers: `" 00"` through `" 99"`
+
+The custom 32K-vocab tokenizer makes this model **not directly comparable** to GPT-2's 50K byte-level BPE perplexity — always compare against your own run.
 
 ---
 
-## Hardware & Time Budget
-
-| GPU | Tokens/sec (estimated) | Tokens in 4 weeks |
-|---|---|---|
-| **RTX 3060 12GB** | 14,000 – 18,000 | **34B – 43B** |
-| RTX 4070 12GB | 25,000 – 35,000 | 60B – 85B |
+## Chinchilla Scaling
 
 The [Chinchilla scaling law](https://arxiv.org/abs/2203.15556) recommends **~20 tokens per parameter** for compute-optimal training:
 
-- **Chinchilla-optimal for 124M:** ~2.5B tokens
-- **Recommended dataset size:** 10–15 GB raw text (~2.6B–4B tokens)
-- **RTX 3060 in 4 weeks:** vastly exceeds Chinchilla-optimal → the model will be well over-trained, which is **desirable** for a model this size (better quality at inference)
+- **Parameters:** ~283M
+- **Chinchilla-optimal tokens:** ~5.66B
+- **Recommended dataset size:** ~24 GB raw text
+- **Tokens per optimizer step:** `batch_size(1) × block_size(4096) × grad_accum(40)` = 163,840
+- **`max_iters`:** 35,000 steps (Chinchilla-optimal for this config)
 
 ---
 
@@ -64,12 +67,15 @@ The [Chinchilla scaling law](https://arxiv.org/abs/2203.15556) recommends **~20 
 ### 1. Install dependencies
 
 ```bash
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-pip install tiktoken datasets tqdm requests numpy
+uv venv .venv --python 3.11
+source .venv/bin/activate           # Linux/macOS
+# .venv\Scripts\Activate.ps1       # Windows PowerShell
+
+uv pip install torch --index-url https://download.pytorch.org/whl/cu121
+uv pip install -r requirements.txt
 ```
 
-> **Windows note:** `torch.compile` is not reliable on Windows + PyTorch < 2.4.  
-> Keep `"compile": false` in `config.json` unless you're on WSL2 or Linux.
+> **Windows note:** `torch.compile` is not reliable on Windows. Keep `"compile": false` in `config.json` unless you're on WSL2 or Linux.
 
 ---
 
@@ -77,18 +83,21 @@ pip install tiktoken datasets tqdm requests numpy
 
 ```bash
 python build_dataset.py
-# When prompted, enter a target size in GB (recommended: 10)
+# When prompted, enter a target size in GB (recommended: 24 for Chinchilla-optimal)
 ```
 
-This streams from **5 high-quality open sources** in a curated proportion mix:
+This downloads from **[HuggingFaceTB/cosmopedia](https://huggingface.co/datasets/HuggingFaceTB/cosmopedia)** — a high-quality synthetic educational corpus — across all 8 configs in a curated proportion mix:
 
-| Source | Proportion | Description |
+| Config | Proportion | Description |
 |---|---|---|
-| [FineWeb-Edu](https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu) | 33% | Filtered educational web text |
-| [Wikipedia](https://huggingface.co/datasets/wikimedia/wikipedia) | 27% | English Wikipedia (Nov 2023) |
-| [CodeParrot](https://huggingface.co/datasets/transformersbook/codeparrot-train) | 15% | Python source code |
-| [Project Gutenberg](https://www.gutenberg.org/) | 15% | Classic literature (via gutendex API) |
-| [FineMath](https://huggingface.co/datasets/HuggingFaceTB/finemath) | 10% | Mathematical text |
+| `web_samples_v2` | 25% | Web text (newest) |
+| `web_samples_v1` | 20% | Web text |
+| `stories` | 15% | Narrative / creative text |
+| `auto_math_text` | 15% | Math-heavy text |
+| `wikihow` | 10% | How-to instructions |
+| `stanford` | 7% | Academic / Stanford courses |
+| `openstax` | 5% | Textbook content |
+| `khanacademy` | 3% | Educational Q&A |
 
 **Output:** `data/corpus.txt` + `data/dataset_stats.json`
 
@@ -96,12 +105,24 @@ The cleaning pipeline:
 - Unicode NFKC normalization
 - Control character removal
 - Whitespace normalisation (max 2 consecutive newlines)
-- Hash-based deduplication (per source)
+- Hash-based deduplication (per document)
 - Minimum document length filter (300+ chars)
 
 ---
 
-### 3. Pre-tokenise the dataset *(required before training)*
+### 3. Train the tokenizer
+
+```bash
+python train_tokenizer.py
+```
+
+Trains a BPE tokenizer on `data/corpus.txt` with vocab size **32,768** and 206 custom guaranteed tokens (indentation spaces, double-digit numbers, space-prefixed double-digit numbers).
+
+**Output:** `tokenizer/tokenizer.json`
+
+---
+
+### 4. Pre-tokenise the dataset *(required before training)*
 
 ```bash
 python tokenize_dataset.py
@@ -116,51 +137,50 @@ data/val.bin     –  10% of tokens  (uint16, memory-mapped)
 
 **Why this step is critical:**
 
-| Method | 10 GB corpus startup | RAM needed |
+| Method | Large corpus startup | RAM needed |
 |---|---|---|
-| Load `corpus.txt` at train time | 10–30 minutes | ~20 GB |
-| **Load `train.bin` at train time** | **< 1 second** | **~0 GB** |
+| Load `corpus.txt` at train time | 10–30 minutes | ~20+ GB |
+| **Load `train.bin` (memmap)** | **< 1 second** | **~0 GB** |
+| **Load `train.bin` (preload)** | **< 1 second** | **~11 GB** |
 
-The binary files are memory-mapped — the OS loads pages on demand, so training starts immediately and RAM usage is negligible.
+By default the `.bin` file is read via `np.memmap` (`preload: false`) — OS-paged, near-zero RAM. Set `preload: true` to load everything into RAM for zero disk reads during training (requires sufficient system RAM).
 
-An `<|endoftext|>` (token id 50256) separator is inserted between every document. This teaches the model where documents end and prevents it from learning spurious cross-document context.
+An `<|endoftext|>` (token id 0) separator is inserted between every document.
 
 **Options:**
 
 ```bash
 python tokenize_dataset.py --input data/corpus.txt   # default
-python tokenize_dataset.py --split 0.95              # more training data
+python tokenize_dataset.py --split 0.90              # 90% train / 10% val
 python tokenize_dataset.py --no-eot                  # skip EOT (not recommended)
 ```
 
-The default `config.json` already points to `train.bin`, so no manual change is needed if you're using the recommended config.
-
 ---
 
-### 4. Configure
+### 5. Configure
 
-Edit `config.json` (created automatically on first `python train.py`, or copy the recommended config below):
+The active config is `config.json`. Current recommended values:
 
 ```json
 {
-  "vocab_size": 50258,
+  "vocab_size": 32768,
   "n_embd": 768,
   "n_head": 12,
-  "n_layer": 12,
-  "block_size": 1024,
+  "n_layer": 36,
+  "block_size": 4096,
   "dropout": 0.0,
   "bias": false,
-  "batch_size": 8,
-  "gradient_accumulation_steps": 8,
-  "max_iters": 100000,
-  "learning_rate": 6e-4,
+  "batch_size": 1,
+  "gradient_accumulation_steps": 40,
+  "max_iters": 35000,
+  "learning_rate": 2e-4,
   "weight_decay": 0.1,
-  "beta1": 0.9,
+  "beta1": 0.95,
   "beta2": 0.95,
-  "warmup_iters": 2000,
-  "lr_decay_iters": 100000,
-  "min_lr": 6e-5,
-  "eval_interval": 500,
+  "warmup_iters": 3000,
+  "lr_decay_iters": 35000,
+  "min_lr": 2e-5,
+  "eval_interval": 1000,
   "eval_iters": 200,
   "log_interval": 10,
   "save_interval": 1000,
@@ -179,17 +199,39 @@ Edit `config.json` (created automatically on first `python train.py`, or copy th
   "top_p": 0.95,
   "ema_decay": 0.999,
   "use_ema": true,
-  "grad_clip": 1.0
+  "grad_clip": 1.0,
+  "gradient_checkpointing": 2,
+  "preload": false
 }
 ```
 
-> **Note on `dropout: 0.0`:** For pretraining at this scale (tokens/param >> 1), dropout hurts more than it helps. GPT-2 and most modern LLMs train with zero dropout. Only enable it if your dataset is very small and you're seeing severe overfitting.
+> **Note on `dropout: 0.0`:** For pretraining at this scale, dropout hurts more than it helps. GPT-2 and most modern LLMs train with zero dropout.
 
-> **Note on effective batch size:** `batch_size=8` × `gradient_accumulation_steps=8` × `block_size=1024` = **65,536 tokens per update**. This is the effective batch size that drives gradient stability. Never reduce `gradient_accumulation_steps` without also reducing `learning_rate`.
+> **Note on effective batch size:** `batch_size=1` × `gradient_accumulation_steps=40` × `block_size=4096` = **163,840 tokens per update**.
+
+> **Why these hyperparameters:**
+> - `learning_rate: 2e-4` — calibrated for the 36-layer, 283M architecture. Deeper models benefit from a slightly lower peak LR for gradient stability.
+> - `warmup_iters: 3000` — extended warmup allows the deeper model to stabilise all layers before taking large gradient steps.
+> - `beta1 == beta2 == 0.95` — matching β2 to β1 eliminates the periodic loss spikes you get with β2 ≫ β1. Supported by Cattaneo & Shigida (NeurIPS 2025) and Orvieto & Gower (NeurIPS 2025).
+> - `max_iters: 35000` — Chinchilla-optimal for 283M at 163,840 tokens/step.
+
+#### GPU with more VRAM (A100 / H100)?
+
+On GPUs with large VRAM, you can unlock significant speed improvements via config alone:
+
+```json
+"compile": true,
+"gradient_checkpointing": 0,
+"batch_size": 8,
+"gradient_accumulation_steps": 5,
+"preload": true
+```
+
+This keeps the same effective tokens-per-step while removing accumulation overhead, eliminating activation recomputation, and enabling `torch.compile` (Linux only).
 
 ---
 
-### 5. Train
+### 6. Train
 
 ```bash
 python train.py
@@ -201,7 +243,7 @@ Training resumes automatically from `checkpoints/latest.pt` if it exists. To sta
 
 ---
 
-### 6. Generate text
+### 7. Generate text
 
 ```bash
 python generate.py "The meaning of life is"
@@ -217,7 +259,10 @@ Generation parameters (via environment variables):
 | `MAX_NEW` | `500` | Maximum tokens to generate |
 
 ```bash
-# Example: low temperature, longer output
+# Linux/macOS
+TEMP=0.6 MAX_NEW=1000 python generate.py "Once upon a time"
+
+# Windows
 set TEMP=0.6 && set MAX_NEW=1000 && python generate.py "Once upon a time"
 ```
 
@@ -230,25 +275,25 @@ set TEMP=0.6 && set MAX_NEW=1000 && python generate.py "Once upon a time"
 Every `log_interval` steps (default: every 10 steps), the trainer prints:
 
 ```
-[Step   1000/100000]  loss=3.4521  lr=2.85e-04  grad_norm=0.82  tok/s=16,234  VRAM=10.1/12.0GB  ETA=3d 14h
+[Step   1000/35000]  loss=3.4521  lr=1.85e-04  grad_norm=0.82  tok/s=18,000  VRAM=8.4/16.0GB  ETA=...
 ```
 
-Every `eval_interval` steps (default: every 500 steps), a full evaluation block is printed:
+Every `eval_interval` steps (default: every 1000 steps), a full evaluation block is printed:
 
 ```
 ════════════════════════════════════════════════════
-  EVALUATION @ Step 1000 / 100000   (1.0%)
+  EVALUATION @ Step 1000 / 35000   (2.9%)
 ════════════════════════════════════════════════════
   Train Loss     : 3.4521
   Val Loss       : 3.6102  (best: 3.5901  Δ: +0.020)
   Perplexity     : 37.02
   EMA Val Loss   : 3.5834
-  Learning Rate  : 2.85e-04
+  Learning Rate  : 1.85e-04
   Avg Grad Norm  : 0.823
-  Tokens/sec     : 16,234
-  VRAM           : 10.1 / 12.0 GB
+  Tokens/sec     : 18,000
+  VRAM           : 8.4 / 16.0 GB
   Elapsed        : 00:14:22
-  ETA            : 3d 13h 46m
+  ETA            : ...
 ════════════════════════════════════════════════════
 ```
 
@@ -268,16 +313,12 @@ Logged metrics:
 | `train/tokens_per_sec` | Training throughput |
 | `eval/train_loss` | Train loss from `estimate_loss()` |
 | `eval/val_loss` | Validation loss |
-| `eval/perplexity` | `exp(val_loss)` — more interpretable than raw loss |
+| `eval/perplexity` | `exp(val_loss)` |
 | `eval/ema_val_loss` | EMA model validation loss |
 
 ### logs/training_log.txt
 
-A persistent, structured log file is written throughout training. It survives terminal closes, SSH drops, and crashes. Each evaluation block is appended as a readable record:
-
-```
-[2026-07-23 01:15:32] STEP 1000 | train=3.4521 | val=3.6102 | ppl=37.02 | lr=2.85e-04 | tok/s=16234 | VRAM=10.1GB | ETA=3d13h
-```
+A persistent structured log is written throughout training. It survives terminal closes, SSH drops, and crashes.
 
 ---
 
@@ -286,10 +327,10 @@ A persistent, structured log file is written throughout training. It survives te
 | Feature | Details |
 |---|---|
 | **Flash Attention** | `F.scaled_dot_product_attention` auto-dispatches to FlashAttention on Ampere+ (RTX 30xx/40xx). No extra install needed. |
-| **Mixed precision (AMP)** | Trains in `bfloat16` by default. ~1.5–2× faster on Tensor Core GPUs. GradScaler for float16 fallback. |
+| **Mixed precision (AMP)** | Trains in `bfloat16` by default. GradScaler for float16 fallback. |
 | **TF32** | Enables TensorFloat-32 matmuls on Ampere+ for free speed at no quality cost. |
 | **EMA** | Exponential moving average of weights (`decay=0.999`). EMA model is evaluated separately and used at inference for better generalisation. |
-| **Gradient accumulation** | Simulates large batches (65K tokens/step) on limited VRAM. |
+| **Gradient accumulation** | Simulates large effective batches (163K tokens/step) on limited VRAM. |
 | **Gradient clipping** | Clips gradient norm to 1.0. Grad norm is tracked and logged. |
 | **Cosine LR schedule** | Warmup 0 → `learning_rate` over `warmup_iters` steps, then cosine decay to `min_lr`. |
 | **Fused AdamW** | CUDA-fused AdamW (~5–10% optimizer speedup). |
@@ -298,24 +339,31 @@ A persistent, structured log file is written throughout training. It survives te
 | **Checkpointing** | Saves `checkpoints/latest.pt` (every `save_interval` steps) and `checkpoints/best.pt` (whenever val loss improves). Both include full optimizer state for seamless resume. |
 | **Auto-resume** | Detects `checkpoints/latest.pt` at startup and resumes from saved iteration. |
 | **Sample generation** | Generates `num_generations` text samples every `gen_interval` steps into `samples/`. |
-| **Memory-mapped dataset** | `train.bin`/`val.bin` load in <1 second via `np.memmap`. No RAM spike at startup. |
+| **Gradient checkpointing** | Recomputed activations (`gradient_checkpointing: 2`) to reduce activation VRAM at a small compute cost. Disable on large-VRAM GPUs for speed. |
+| **Direct random sampling** | Training draws batches with `torch.randint` over numpy uint16 arrays — no `DataLoader`, no `torch.randperm`. Keeps startup to <1 s. |
+| **Dataset preloading** | `train.bin`/`val.bin` are read via `np.memmap` by default (`preload: false`, near-zero RAM). Set `preload: true` to load into RAM for zero disk reads during training. |
 
 ---
 
 ## Project Structure
 
 ```
-nano_brain/
-├── build_dataset.py      # Multi-source dataset collector (HuggingFace + Gutenberg)
+nanorush/
+├── build_dataset.py      # Downloads Cosmopedia from HuggingFace (user-specified GB)
+├── train_tokenizer.py    # Trains the custom BPE tokenizer → tokenizer/tokenizer.json
 ├── tokenize_dataset.py   # Converts corpus.txt → train.bin + val.bin (run once)
 ├── config.py             # GPTConfig dataclass (all hyperparameters)
 ├── config.json           # Active hyperparameter values (edit this)
-├── tokenizer.py          # Thin wrapper around tiktoken (GPT-2 BPE)
-├── dataset.py            # BinDataset (memmap) + TextDataset + DataLoader factory
+├── tokenizer.py          # Thin wrapper around HuggingFace `tokenizers` (custom BPE)
+├── dataset.py            # load_bin_tensors (uint16 numpy / memmap, no DataLoader)
 ├── model.py              # GPT model: LayerNorm, CausalSelfAttention, MLP, Block, EMA
 ├── trainer.py            # Training loop: AMP, grad accum, logging, checkpointing
 ├── train.py              # Entry point
 ├── generate.py           # Interactive text generation
+├── plot_training.py      # Visualises logs/training_log.txt loss curves
+│
+├── tokenizer/
+│   └── tokenizer.json    # Trained custom BPE tokenizer (32,768 vocab)
 │
 ├── data/
 │   ├── corpus.txt        # Raw text corpus (from build_dataset.py)
@@ -339,53 +387,44 @@ nano_brain/
 
 ## Configuration Reference
 
-All hyperparameters live in `config.json`. Key fields:
-
 ### Model Architecture
 
-| Key | Default | Description |
+| Key | Value | Description |
 |---|---|---|
 | `n_embd` | `768` | Embedding / hidden dimension |
 | `n_head` | `12` | Number of attention heads |
-| `n_layer` | `12` | Number of transformer blocks |
-| `block_size` | `1024` | Context window (tokens) |
-| `vocab_size` | `50258` | Set automatically from tokenizer |
-| `dropout` | `0.0` | Dropout probability (0 = disabled) |
-| `bias` | `false` | Add bias to Linear layers (GPT-2 style: false) |
+| `n_layer` | `36` | Number of transformer blocks |
+| `block_size` | `4096` | Context window (tokens) |
+| `vocab_size` | `32768` | Set automatically from the custom tokenizer |
+| `dropout` | `0.0` | Dropout probability (0 = disabled for pretraining) |
+| `bias` | `false` | Add bias to Linear layers |
 
 ### Training
 
-| Key | Default | Description |
+| Key | Value | Description |
 |---|---|---|
-| `batch_size` | `8` | Micro-batch size per GPU step |
-| `gradient_accumulation_steps` | `8` | Accumulate before weight update |
-| `max_iters` | `100000` | Total optimizer steps |
-| `learning_rate` | `6e-4` | Peak learning rate |
-| `warmup_iters` | `2000` | LR warmup steps |
-| `lr_decay_iters` | `100000` | Steps over which to decay LR |
-| `min_lr` | `6e-5` | Minimum LR (end of cosine schedule) |
+| `batch_size` | `1` | Micro-batch size per GPU step |
+| `gradient_accumulation_steps` | `40` | Accumulate before weight update |
+| `max_iters` | `35000` | Total optimizer steps (Chinchilla-optimal) |
+| `learning_rate` | `2e-4` | Peak learning rate |
+| `warmup_iters` | `3000` | LR warmup steps |
+| `lr_decay_iters` | `35000` | Steps over which to decay LR |
+| `min_lr` | `2e-5` | Minimum LR (end of cosine schedule) |
 | `weight_decay` | `0.1` | AdamW weight decay |
+| `beta1` / `beta2` | `0.95` / `0.95` | Adam moments — matched β2 avoids loss spikes |
 | `grad_clip` | `1.0` | Gradient norm clipping threshold |
-
-### Logging & Saving
-
-| Key | Default | Description |
-|---|---|---|
-| `log_interval` | `10` | Print training metrics every N steps |
-| `eval_interval` | `500` | Run full evaluation every N steps |
-| `eval_iters` | `200` | Batches to average for loss estimate |
-| `save_interval` | `1000` | Save `latest.pt` every N steps |
-| `gen_interval` | `5000` | Generate text samples every N steps |
+| `gradient_checkpointing` | `2` | Activation recomputation stride (0 = off) |
 
 ### System
 
-| Key | Default | Description |
+| Key | Value | Description |
 |---|---|---|
 | `device` | `"cuda"` | `"cuda"` or `"cpu"` |
-| `dtype` | `"bfloat16"` | `"bfloat16"` (recommended) or `"float16"` or `"float32"` |
-| `compile` | `false` | Enable `torch.compile` (Linux/WSL2 only for reliability) |
+| `dtype` | `"bfloat16"` | `"bfloat16"` (recommended) or `"float32"` |
+| `compile` | `false` | Enable `torch.compile` (Linux only) |
 | `tf32` | `true` | TensorFloat-32 matmuls (Ampere+ only) |
 | `fused_adam` | `true` | CUDA-fused AdamW |
+| `preload` | `false` | Load dataset into RAM; `false` uses `np.memmap` |
 
 ---
 
@@ -396,19 +435,22 @@ All hyperparameters live in `config.json`. Key fields:
 | ~4.5–5.0 | ~90–150 | Early training — random-ish output |
 | ~3.5–4.0 | ~33–55 | Mid training — grammatical, coherent short phrases |
 | ~3.0–3.5 | ~20–33 | Good — coherent paragraphs, follows topic |
-| ~2.8–3.0 | ~16–20 | Strong — GPT-2 Small territory |
-| < 2.8 | < 16 | Excellent for a 124M model |
+| ~2.8–3.0 | ~16–20 | Strong — competitive with GPT-2-class models |
+| < 2.8 | < 16 | Excellent for this model size |
 
-After 4 weeks on an RTX 3060, expect to land around **~3.0–3.3** depending on dataset quality.
+> **Note on interpretation:** this repo trains a custom 32,768-vocab BPE tokenizer, so its perplexity is **not directly comparable** to GPT-2's 50K byte-level BPE numbers. Only compare against your own run.
+
+You should see a smooth, monotonically decreasing loss. If you see periodic loss spikes, verify that `beta1` and `beta2` are matched (both 0.95) and that `learning_rate` is not too high.
 
 ---
 
 ## References
 
-- [GPT-2 Paper](https://d4mucfpksywv.cloudfront.net/better-language-models/language-models.pdf) — Radford et al. 2019
+- [GPT-2 Paper](https://arxiv.org/abs/1904.05779) — Radford et al. 2019
 - [nanoGPT](https://github.com/karpathy/nanoGPT) — Karpathy's minimal GPT-2 implementation (primary inspiration)
 - [Chinchilla](https://arxiv.org/abs/2203.15556) — Hoffmann et al. 2022 (scaling laws)
 - [Flash Attention](https://arxiv.org/abs/2205.14135) — Dao et al. 2022
-- [FineWeb-Edu](https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu) — HuggingFace dataset
-- [FineMath](https://huggingface.co/datasets/HuggingFaceTB/finemath) — HuggingFace dataset
-- [tiktoken](https://github.com/openai/tiktoken) — OpenAI's fast BPE tokenizer
+- [tokenizers](https://github.com/huggingface/tokenizers) — HuggingFace's Rust BPE tokenizer
+- [Cosmopedia](https://huggingface.co/datasets/HuggingFaceTB/cosmopedia) — HuggingFace synthetic educational dataset
+- [How Memory in Optimization Algorithms Implicitly Modifies the Loss](https://arxiv.org/abs/2502.02132) — Cattaneo & Shigida, NeurIPS 2025
+- [In Search of Adam's Secret Sauce](https://openreview.net/forum?id=CH72XyZs4y) — Orvieto & Gower, NeurIPS 2025

@@ -3,6 +3,8 @@ import sys
 import json
 import torch
 
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128"
+
 from config import GPTConfig
 from tokenizer import Tokenizer
 from trainer import Trainer
@@ -47,7 +49,7 @@ def main():
         trainer.train()
     except KeyboardInterrupt:
         print("\nInterrupted, saving checkpoint...")
-        trainer.save_checkpoint("checkpoints/latest.pt")
+        trainer.save_checkpoint("checkpoints/latest.pt", step_num=trainer.iter_num)
         print("Checkpoint saved. Exiting.")
         sys.exit(0)
 

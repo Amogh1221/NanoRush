@@ -22,14 +22,12 @@ Usage
 -----
     python tokenize_dataset.py                       # uses defaults
     python tokenize_dataset.py --input data/corpus.txt --split 0.9
-    python tokenize_dataset.py --input data/corpus.txt --shard-size 500
 
 Options
 -------
     --input        Path to the source text file  [default: data/corpus.txt]
     --out-dir      Directory for .bin files      [default: data]
     --split        Train / val ratio             [default: 0.90]
-    --shard-size   Tokens per write shard (M)    [default: 250 M tokens]
     --eot          Encode <|endoftext|> between  [default: True]
                    documents (recommended)
 
@@ -41,16 +39,19 @@ Output
 """
 
 import argparse
+import gc
 import json
 import logging
 import os
+import random
 import sys
 import time
 from pathlib import Path
 
 import numpy as np
-import tiktoken
 from tqdm import tqdm
+
+from tokenizer import Tokenizer
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Logging
@@ -71,12 +72,11 @@ BASE = Path(__file__).resolve().parent
 DEFAULT_INPUT = BASE / "data" / "corpus.txt"
 DEFAULT_OUT = BASE / "data"
 
-# GPT-2 tokenizer (tiktoken)
-ENCODING_NAME = "gpt2"
-
-# How many raw characters to batch before calling encode().
-# Larger = faster but uses more RAM during tokenisation.
-ENCODE_CHUNK_CHARS = 50_000_000  # 50 MB of text at a time
+# How many docs/chars to batch before calling encode_batch().
+# Larger batches = faster (Rust tokenizer parallelizes internally).
+# Memory: each batch's output is written to disk immediately — no accumulation.
+BATCH_DOCS = 500
+BATCH_CHARS = 20_000_000  # ~20 MB text per batch
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Helpers
@@ -117,10 +117,14 @@ def tokenize(
     out_dir: Path,
     split_ratio: float = 0.90,
     add_eot: bool = True,
-    shard_size_M: int = 250,
 ) -> dict:
     """
-    Stream-tokenise *input_path* and write train.bin / val.bin.
+    Single-pass tokeniser with random per-document train/val assignment.
+
+    Streams the input file once.  Each document is independently assigned to
+    train (probability *split_ratio*) or val (probability 1 - split_ratio)
+    via a seeded RNG — no two-pass scanning, no large-memory shuffle.
+    Encoded batches are written directly to disk — no Python list accumulation.
 
     Returns a stats dict suitable for JSON serialisation.
     """
@@ -129,175 +133,140 @@ def tokenize(
     train_path = out_dir / "train.bin"
     val_path = out_dir / "val.bin"
 
-    # Remove old outputs so we start clean
     for p in (train_path, val_path):
         if p.exists():
             log.warning("Removing existing %s", p)
             p.unlink()
 
-    enc = tiktoken.get_encoding(ENCODING_NAME)
-    eot_id: int = enc.eot_token  # 50256 for GPT-2
+    enc = Tokenizer()
+    eot_id: int = enc.eot_token
 
-    log.info("Tokenizer : %s  (vocab=%d, eot=%d)", ENCODING_NAME, enc.n_vocab, eot_id)
+    log.info("Tokenizer : Custom BPE  (vocab=%d, eot=%d)", enc.vocab_size, eot_id)
     log.info("Input     : %s  (%s)", input_path, human_size(input_path.stat().st_size))
     log.info("Output    : %s/  (train.bin + val.bin)", out_dir)
-    log.info("Split     : %.0f%% train / %.0f%% val", split_ratio * 100, (1 - split_ratio) * 100)
+    log.info("Split     : %.0f%% train / %.0f%% val (random per-doc)", split_ratio * 100, (1 - split_ratio) * 100)
     log.info("EOT token : %s", "yes" if add_eot else "no")
     log.info("")
 
     input_size = input_path.stat().st_size
-    shard_tokens = shard_size_M * 1_000_000
 
     total_tokens = 0
     total_docs = 0
-    doc_lengths: list[int] = []   # tokens per document (sampled, not all)
+    doc_lengths: list[int] = []
 
     start_time = time.time()
+    rng = random.Random(42)
 
-    # ── First pass: count total tokens to know the split boundary ──────────
-    log.info("Pass 1 / 2 — counting tokens to determine split boundary …")
+    # ── Single-pass: stream, sample, batch-encode, write ─────────────────
+    log.info("Tokenising and writing binary files …")
 
-    # We stream the file in large text chunks.  Documents are separated by
-    # blank lines (two consecutive newlines) in the corpus.txt format that
-    # build_dataset.py produces.
+    train_batch: list[str] = []
+    val_batch: list[str] = []
+    train_batch_chars = 0
+    val_batch_chars = 0
 
-    chunk_buf = ""
-    approx_total = 0
-
-    with open(input_path, "r", encoding="utf-8") as f:
-        pbar = tqdm(
-            total=input_size,
-            unit="B",
-            unit_scale=True,
-            unit_divisor=1024,
-            desc="Counting",
-        )
-        for line in f:
-            pbar.update(len(line.encode("utf-8")))
-            chunk_buf += line
-            if len(chunk_buf) >= ENCODE_CHUNK_CHARS:
-                ids = enc.encode_ordinary(chunk_buf)
-                approx_total += len(ids)
-                chunk_buf = ""
-        if chunk_buf:
-            ids = enc.encode_ordinary(chunk_buf)
-            approx_total += len(ids)
-        pbar.close()
-
-    # Adjust for EOT tokens (one per document; we'll count docs in pass 2)
-    # We don't know doc count yet, so use approximation for the split byte
-    split_token_target = int(approx_total * split_ratio)
-    log.info(
-        "Approx total tokens : %s  →  split target: %s train / %s val",
-        human_tokens(approx_total),
-        human_tokens(split_token_target),
-        human_tokens(approx_total - split_token_target),
-    )
-    log.info("")
-
-    # ── Second pass: tokenise and write ─────────────────────────────────────
-    log.info("Pass 2 / 2 — tokenising and writing binary files …")
-
-    train_tokens_written = 0
-    val_tokens_written = 0
-    shard_buf: list[int] = []
-    in_val = False
-
-    def flush_shard(to_val: bool) -> None:
-        nonlocal train_tokens_written, val_tokens_written
-        arr = np.array(shard_buf, dtype=np.uint16)
-        if to_val:
-            write_bin(arr, val_path)
-            val_tokens_written += len(arr)
+    def encode_and_route(target: str) -> None:
+        nonlocal total_docs, total_tokens, train_batch_chars, val_batch_chars
+        batch = train_batch if target == "train" else val_batch
+        if not batch:
+            return
+        path = train_path if target == "train" else val_path
+        batch_ids_list = enc.encode_batch(batch)
+        arrays = []
+        for ids in batch_ids_list:
+            if add_eot:
+                ids.append(eot_id)
+            if len(ids) % 100 == 0:
+                doc_lengths.append(len(ids))
+            total_docs += 1
+            total_tokens += len(ids)
+            arrays.append(np.array(ids, dtype=np.uint16))
+        if arrays:
+            write_bin(np.concatenate(arrays), path)
+        del batch_ids_list, arrays
+        batch.clear()
+        if target == "train":
+            train_batch_chars = 0
         else:
-            write_bin(arr, train_path)
-            train_tokens_written += len(arr)
-        shard_buf.clear()
+            val_batch_chars = 0
+        gc.collect()
+
+    doc_count = 0
+    pbar = tqdm(
+        total=input_size,
+        unit="B",
+        unit_scale=True,
+        unit_divisor=1024,
+        desc="Tokenising",
+    )
+
+    doc_text: list[str] = []
 
     with open(input_path, "r", encoding="utf-8") as f:
-        pbar = tqdm(
-            total=input_size,
-            unit="B",
-            unit_scale=True,
-            unit_divisor=1024,
-            desc="Tokenising",
-        )
-
-        doc_text = []
         for raw_line in f:
             pbar.update(len(raw_line.encode("utf-8")))
             line = raw_line.rstrip("\n")
 
-            # Document boundary: corpus.txt uses "\n\n" between documents
             if line == "" and doc_text and doc_text[-1] == "":
-                # We have a blank-line sequence → end of document
                 full_doc = "\n".join(doc_text).strip()
-                if full_doc:
-                    ids = enc.encode_ordinary(full_doc)
-                    if add_eot:
-                        ids.append(eot_id)
-
-                    # Sample doc lengths (every 100th doc) for stats
-                    if total_docs % 100 == 0:
-                        doc_lengths.append(len(ids))
-
-                    total_docs += 1
-                    total_tokens += len(ids)
-                    shard_buf.extend(ids)
-
-                    # Decide whether we've crossed into val territory
-                    if not in_val and total_tokens >= split_token_target:
-                        # Flush remaining train shard
-                        if shard_buf:
-                            flush_shard(to_val=False)
-                        in_val = True
-
-                    if len(shard_buf) >= shard_tokens:
-                        flush_shard(to_val=in_val)
-
                 doc_text = []
+                if not full_doc:
+                    continue
+
+                target = "train" if rng.random() < split_ratio else "val"
+                if target == "val":
+                    val_batch.append(full_doc)
+                    val_batch_chars += len(full_doc)
+                    if len(val_batch) >= BATCH_DOCS or val_batch_chars >= BATCH_CHARS:
+                        encode_and_route("val")
+                else:
+                    train_batch.append(full_doc)
+                    train_batch_chars += len(full_doc)
+                    if len(train_batch) >= BATCH_DOCS or train_batch_chars >= BATCH_CHARS:
+                        encode_and_route("train")
+                doc_count += 1
+                if doc_count % 5000 == 0:
+                    pct = pbar.n / max(input_size, 1) * 100
+                    log.info("  %s docs processed  (%5.1f%% of file)", f"{doc_count:,}", pct)
+                    pbar.set_postfix({"docs": f"{doc_count:,}"})
             else:
                 doc_text.append(line)
 
-        # Handle last document (file may not end with double newline)
-        if doc_text:
-            full_doc = "\n".join(doc_text).strip()
-            if full_doc:
-                ids = enc.encode_ordinary(full_doc)
-                if add_eot:
-                    ids.append(eot_id)
-                doc_lengths.append(len(ids))
-                total_docs += 1
-                total_tokens += len(ids)
-                shard_buf.extend(ids)
+    # ── Handle last document if file doesn't end with blank line ──
+    if doc_text:
+        full_doc = "\n".join(doc_text).strip()
+        if full_doc:
+            target = "train" if rng.random() < split_ratio else "val"
+            if target == "val":
+                val_batch.append(full_doc)
+            else:
+                train_batch.append(full_doc)
 
-        # Flush remaining buffer
-        if shard_buf:
-            flush_shard(to_val=in_val)
+    # ── Flush remaining batches ──
+    encode_and_route("train")
+    encode_and_route("val")
 
-        pbar.close()
+    pbar.close()
 
     # ── Verification ────────────────────────────────────────────────────────
     log.info("")
     log.info("Verifying output files …")
 
-    def verify(p: Path, expected_tokens: int) -> int:
+    def verify(p: Path) -> int:
         if not p.exists():
             log.error("  MISSING: %s", p)
             return 0
         actual = p.stat().st_size // 2  # uint16 = 2 bytes per token
-        status = "OK" if abs(actual - expected_tokens) < 1000 else "MISMATCH"
         log.info(
-            "  %-12s  %s tokens  (%s)  [%s]",
+            "  %-12s  %s tokens  (%s)",
             p.name,
             human_tokens(actual),
             human_size(p.stat().st_size),
-            status,
         )
         return actual
 
-    train_actual = verify(train_path, train_tokens_written)
-    val_actual = verify(val_path, val_tokens_written)
+    train_actual = verify(train_path)
+    val_actual = verify(val_path)
 
     elapsed = time.time() - start_time
     tok_per_sec = total_tokens / elapsed if elapsed > 0 else 0
@@ -307,7 +276,7 @@ def tokenize(
     median_doc_len = int(np.median(doc_lengths)) if doc_lengths else 0
 
     stats = {
-        "encoding": ENCODING_NAME,
+        "model_type": "custom_bpe",
         "input_file": str(input_path),
         "input_size_bytes": int(input_path.stat().st_size),
         "total_documents": total_docs,
@@ -430,13 +399,6 @@ def parse_args() -> argparse.Namespace:
         help="Fraction of tokens to use for training (rest goes to validation)",
     )
     p.add_argument(
-        "--shard-size",
-        type=int,
-        default=250,
-        metavar="MILLION_TOKENS",
-        help="Tokens per write shard (controls peak RAM during tokenisation)",
-    )
-    p.add_argument(
         "--no-eot",
         action="store_true",
         help="Do NOT insert <|endoftext|> between documents (not recommended)",
@@ -450,7 +412,6 @@ def main():
     input_path: Path = args.input
     out_dir: Path = args.out_dir
     split_ratio: float = args.split
-    shard_size_M: int = args.shard_size
     add_eot: bool = not args.no_eot
 
     # ── Validate input ───────────────────────────────────────────────────────
@@ -472,7 +433,6 @@ def main():
         out_dir=out_dir,
         split_ratio=split_ratio,
         add_eot=add_eot,
-        shard_size_M=shard_size_M,
     )
 
     print_summary(stats)

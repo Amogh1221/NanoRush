@@ -135,7 +135,13 @@ class GPT(nn.Module):
 
         for i, block in enumerate(self.h):
             layer_past = past_key_values[i] if past_key_values is not None else None
-            x, present = block(x, layer_past)
+            ckpt = self.config.gradient_checkpointing
+            if self.training and ckpt > 0 and (i % ckpt == 0):
+                x, present = torch.utils.checkpoint.checkpoint(
+                    block, x, layer_past, use_reentrant=False
+                )
+            else:
+                x, present = block(x, layer_past)
             if use_cache:
                 presents.append(present)
 
@@ -262,10 +268,9 @@ class EMA:
     def update(self):
         for name, param in self.model.named_parameters():
             if param.requires_grad:
-                new_avg = (
-                    1.0 - self.decay
-                ) * param.data + self.decay * self.shadow[name]
-                self.shadow[name] = new_avg.clone()
+                shadow = self.shadow[name]
+                shadow.mul_(self.decay)
+                shadow.add_(param.data, alpha=1.0 - self.decay)
 
     def apply_shadow(self):
         for name, param in self.model.named_parameters():

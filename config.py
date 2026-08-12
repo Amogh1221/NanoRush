@@ -5,24 +5,24 @@ import json
 @dataclass
 class GPTConfig:
     # Model architecture — GPT-2 Small (124M)
-    vocab_size: int = 50258
+    vocab_size: int = 32768
     n_embd: int = 768
     n_head: int = 12
-    n_layer: int = 12
-    block_size: int = 1024
+    n_layer: int = 40
+    block_size: int = 4096
     dropout: float = 0.0
     bias: bool = False
 
     # Training
-    batch_size: int = 8
-    gradient_accumulation_steps: int = 8
-    max_iters: int = 100000
+    batch_size: int = 2
+    gradient_accumulation_steps: int = 40
+    max_iters: int = 80000
     learning_rate: float = 6e-4
     weight_decay: float = 0.1
     beta1: float = 0.9
     beta2: float = 0.95
     warmup_iters: int = 2000
-    lr_decay_iters: int = 100000
+    lr_decay_iters: int = 80000
     min_lr: float = 6e-5
     eval_interval: int = 500
     eval_iters: int = 200
@@ -54,6 +54,12 @@ class GPTConfig:
 
     # Gradient clipping
     grad_clip: float = 1.0
+
+    # Gradient checkpointing stride (0 = off, 1 = all blocks, 2 = every 2nd, etc.)
+    gradient_checkpointing: int = 1
+
+    # Preload dataset into RAM (disable for datasets larger than available RAM)
+    preload: bool = True
 
     def save(self, path: str):
         with open(path, "w") as f:

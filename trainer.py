@@ -17,10 +17,12 @@ Full-featured trainer with:
 import os
 import math
 import time
+import re
 import logging
 from dataclasses import asdict
 from datetime import datetime
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
@@ -28,7 +30,7 @@ from tqdm import tqdm
 
 from config import GPTConfig
 from model import GPT, EMA
-from dataset import create_dataloaders, load_data
+from dataset import load_bin_tensors
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Dtype mapping
@@ -210,15 +212,15 @@ class Trainer:
             "cuda", enabled=(config.dtype == "float16")
         )
 
-        data = load_data(config.data_dir, config.dataset, tokenizer)
-        self.train_loader, self.val_loader = create_dataloaders(
-            data,
-            config.block_size,
-            config.batch_size,
-            num_workers=0,
-            pin_memory=True,
+        self.train_data, self.val_data = load_bin_tensors(
+            config.data_dir, config.dataset, preload=config.preload
         )
-        self.train_iter = iter(self.train_loader)
+        self.train_len = len(self.train_data) - config.block_size
+        self.val_len = len(self.val_data) - config.block_size
+        print(f"Train windows: {self.train_len:,}")
+        print(f"Val windows:   {self.val_len:,}")
+        self._train_data_t = None
+        self._val_data_t = None
 
         self.iter_num = 0
         self.best_val_loss = float("inf")
@@ -231,31 +233,23 @@ class Trainer:
         self._last_log_time = None
 
     def get_batch(self, split):
-        if split == "train":
-            try:
-                x, y = next(self.train_iter)
-            except StopIteration:
-                self.train_iter = iter(self.train_loader)
-                x, y = next(self.train_iter)
-        else:
-            loader_iter = iter(self.val_loader)
-            x, y = next(loader_iter)
-        return x.to(self.device), y.to(self.device)
+        data = self.train_data if split == "train" else self.val_data
+        length = self.train_len if split == "train" else self.val_len
+        ix = torch.randint(length, (self.config.batch_size,))
+        xs, ys = [], []
+        for i in ix.tolist():
+            xs.append(torch.from_numpy(data[i:i+self.config.block_size].astype(np.int64)))
+            ys.append(torch.from_numpy(data[i+1:i+1+self.config.block_size].astype(np.int64)))
+        return torch.stack(xs).to(self.device), torch.stack(ys).to(self.device)
 
     @torch.no_grad()
     def estimate_loss(self):
         out = {}
         self.model.eval()
-        for split, loader in [("train", self.train_loader), ("val", self.val_loader)]:
+        for split in ("train", "val"):
             losses = torch.zeros(self.config.eval_iters, device=self.device)
-            loader_iter = iter(loader)
             for k in range(self.config.eval_iters):
-                try:
-                    x, y = next(loader_iter)
-                except StopIteration:
-                    loader_iter = iter(loader)
-                    x, y = next(loader_iter)
-                x, y = x.to(self.device), y.to(self.device)
+                x, y = self.get_batch(split)
                 with torch.amp.autocast(
                     "cuda",
                     dtype=_DTYPE_MAP.get(self.config.dtype, torch.float16),
@@ -271,7 +265,7 @@ class Trainer:
         self.model.train()
         return out
 
-    def save_checkpoint(self, path, is_best=False):
+    def save_checkpoint(self, path, is_best=False, step_num=None, max_ckpt=100):
         ckpt = {
             "model_state_dict": self.model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
@@ -287,16 +281,35 @@ class Trainer:
         if is_best:
             torch.save(ckpt, "checkpoints/best.pt")
 
+        if step_num is not None:
+            step_path = f"checkpoints/step_{step_num:07d}.pt"
+            if os.path.realpath(path) != os.path.realpath(step_path):
+                torch.save(ckpt, step_path)
+            ckpt_files = sorted(
+                [f for f in os.listdir("checkpoints") if re.match(r"step_\d{7}\.pt$", f)]
+            )
+            while len(ckpt_files) > max_ckpt:
+                oldest = ckpt_files.pop(0)
+                os.remove(os.path.join("checkpoints", oldest))
+
     def load_checkpoint(self, path):
-        ckpt = torch.load(path, map_location=self.device, weights_only=False)
+        # Load on CPU first to avoid a GPU memory spike (checkpoint + model +
+        # EMA + optimizer state would otherwise all be materialised on-device).
+        # load_state_dict copies to the device incrementally.
+        ckpt = torch.load(path, map_location="cpu", weights_only=False)
         self.model.load_state_dict(ckpt["model_state_dict"])
         self.optimizer.load_state_dict(ckpt["optimizer_state_dict"])
         self.iter_num = ckpt["iter_num"]
         self.best_val_loss = ckpt.get("best_val_loss", float("inf"))
         if self.ema is not None and "ema" in ckpt:
             self.ema.load_state_dict(ckpt["ema"])
+            self.ema.shadow = {
+                k: v.to(self.device) for k, v in self.ema.shadow.items()
+            }
         if self.config.dtype == "float16" and "scaler" in ckpt:
             self.scaler.load_state_dict(ckpt["scaler"])
+        del ckpt
+        torch.cuda.empty_cache()
         print(f"Resumed from iteration {self.iter_num}")
 
     def generate_samples(self):
@@ -342,6 +355,7 @@ class Trainer:
         # ── Log config at training start ─────────────────────────────────
         self.flog.log_config(config, self.n_params)
 
+        torch.cuda.empty_cache()
         model.train()
         running_loss = 0.0
         start_time = time.time()
@@ -538,21 +552,24 @@ class Trainer:
                     # Save checkpoint
                     if is_best:
                         self.best_val_loss = val_loss
-                        self.save_checkpoint("checkpoints/latest.pt", is_best=True)
+                        self.save_checkpoint("checkpoints/latest.pt", is_best=True, step_num=self.iter_num)
                     else:
-                        self.save_checkpoint("checkpoints/latest.pt")
+                        self.save_checkpoint("checkpoints/latest.pt", step_num=self.iter_num)
+
+                    # Defrag the CUDA caching allocator after eval's memory spike
+                    torch.cuda.empty_cache()
 
                 if self.iter_num % config.gen_interval == 0 and self.iter_num > 0:
                     self.generate_samples()
 
                 if self.iter_num % config.save_interval == 0 and self.iter_num > 0:
-                    self.save_checkpoint("checkpoints/latest.pt")
+                    self.save_checkpoint("checkpoints/latest.pt", step_num=self.iter_num)
 
                 self.iter_num += 1
                 pbar.update(1)
 
         pbar.close()
-        self.save_checkpoint("checkpoints/latest.pt")
+        self.save_checkpoint("checkpoints/latest.pt", step_num=self.iter_num)
         elapsed = time.time() - start_time
         print(f"\nTraining completed in {elapsed / 3600:.2f} hours")
         print(f"Best val loss: {self.best_val_loss:.4f}  (perplexity: {math.exp(self.best_val_loss):.2f})")

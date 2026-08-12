@@ -43,17 +43,27 @@ log = logging.getLogger(__name__)
 
 class BinDataset(Dataset):
     """
-    Memory-mapped dataset that reads uint16 token ids directly from a .bin
-    file produced by tokenize_dataset.py.  No RAM is allocated beyond what
-    the OS naturally caches.
+    Dataset that reads uint16 token ids from a .bin file.
+
+    When preload=True (default), the entire file is loaded into RAM as a
+    torch.Tensor — zero disk reads during training.  Requires enough system
+    memory to hold the dataset (~1 GB per 500M tokens).
+
+    When preload=False, uses np.memmap (zero-copy, OS-paged) for datasets
+    larger than available RAM.
 
     Returns (x, y) pairs of shape (block_size,) with dtype torch.long.
     """
 
-    def __init__(self, bin_path: str, block_size: int):
+    def __init__(self, bin_path: str, block_size: int, preload: bool = True):
         self.block_size = block_size
-        # np.memmap opens a memory-mapped view — no data is loaded yet.
-        self.data = np.memmap(bin_path, dtype=np.uint16, mode="r")
+        self.preload = preload
+        if preload:
+            arr = np.fromfile(bin_path, dtype=np.uint16)
+            self.data = torch.from_numpy(arr.astype(np.int32))
+            del arr
+        else:
+            self.data = np.memmap(bin_path, dtype=np.uint16, mode="r")
         n_tokens = len(self.data)
         n_blocks = n_tokens - block_size
         if n_blocks <= 0:
@@ -62,24 +72,27 @@ class BinDataset(Dataset):
                 f"block_size={block_size} requires at least {block_size + 1}."
             )
         log.info(
-            "Loaded %-10s  %s tokens  →  %s windows",
+            "Loaded %-10s  %s tokens  →  %s windows  (preload=%s)",
             Path(bin_path).name,
             f"{n_tokens:,}",
             f"{n_blocks:,}",
+            preload,
         )
 
     def __len__(self) -> int:
         return len(self.data) - self.block_size
 
     def __getitem__(self, idx: int):
-        # Slice from the memmap; each slice allocates a tiny numpy array,
-        # which is then converted to a tensor.  This is very cache-friendly.
-        x = torch.from_numpy(
-            self.data[idx : idx + self.block_size].astype(np.int64)
-        )
-        y = torch.from_numpy(
-            self.data[idx + 1 : idx + self.block_size + 1].astype(np.int64)
-        )
+        if self.preload:
+            x = self.data[idx : idx + self.block_size]
+            y = self.data[idx + 1 : idx + self.block_size + 1]
+        else:
+            x = torch.from_numpy(
+                self.data[idx : idx + self.block_size].astype(np.int64)
+            )
+            y = torch.from_numpy(
+                self.data[idx + 1 : idx + self.block_size + 1].astype(np.int64)
+            )
         return x, y
 
 
@@ -166,6 +179,49 @@ def load_data(data_dir: str, dataset_name: str, tokenizer):
 # ──────────────────────────────────────────────────────────────────────────────
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Fast tensor loader (replaces DataLoader — avoids torch.randperm OOM)
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def load_bin_tensors(data_dir: str, dataset_name: str, preload: bool = True) -> tuple:
+    """
+    Load train.bin and val.bin as uint16 numpy arrays.
+
+    Returns (train_data, val_data) where each is a flat 1D uint16 array.
+    preload=True  → np.fromfile (9 GB for 4.5B tokens in RAM).
+    preload=False → np.memmap (OS-paged, near-zero RAM).
+
+    The Trainer converts slices to torch.long on the fly in get_batch.
+    """
+    import numpy as np
+    from pathlib import Path
+
+    path = _resolve_path(data_dir, dataset_name)
+    if not path.endswith(".bin"):
+        raise ValueError("load_bin_tensors requires .bin files")
+
+    train_path = path
+    val_path = path.replace("train.bin", "val.bin")
+    if not os.path.exists(val_path):
+        raise FileNotFoundError(
+            f"Found {train_path} but cannot find {val_path}. "
+            "Run tokenize_dataset.py first."
+        )
+
+    def _load_one(p: str):
+        if preload:
+            arr = np.fromfile(p, dtype=np.uint16)
+            log.info("Loaded %-12s  %s tokens", Path(p).name, f"{len(arr):,}")
+            return arr
+        else:
+            mm = np.memmap(p, dtype=np.uint16, mode="r")
+            log.info("Mmap   %-12s  %s tokens", Path(p).name, f"{len(mm):,}")
+            return mm
+
+    return _load_one(train_path), _load_one(val_path)
+
+
 def create_dataloaders(
     data,
     block_size: int,
@@ -173,6 +229,7 @@ def create_dataloaders(
     num_workers: int = 0,
     pin_memory: bool = True,
     split_ratio: float = 0.9,
+    preload: bool = True,
 ):
     """
     Build train and val DataLoaders.
@@ -182,10 +239,9 @@ def create_dataloaders(
       - torch.Tensor                         → TextDataset (split by split_ratio)
     """
     if isinstance(data, tuple):
-        # Binary memmap path
         train_path, val_path = data
-        train_dataset = BinDataset(train_path, block_size)
-        val_dataset   = BinDataset(val_path,   block_size)
+        train_dataset = BinDataset(train_path, block_size, preload=preload)
+        val_dataset   = BinDataset(val_path,   block_size, preload=preload)
     else:
         # Legacy in-memory tensor
         n = int(split_ratio * len(data))
@@ -207,7 +263,7 @@ def create_dataloaders(
     val_loader = DataLoader(
         val_dataset,
         batch_size=batch_size,
-        shuffle=False,
+        shuffle=True,
         num_workers=num_workers,
         pin_memory=pin_memory,
         persistent_workers=(num_workers > 0),
