@@ -227,7 +227,6 @@ def tokenize(
                 doc_count += 1
                 if doc_count % 5000 == 0:
                     pct = pbar.n / max(input_size, 1) * 100
-                    log.info("  %s docs processed  (%5.1f%% of file)", f"{doc_count:,}", pct)
                     pbar.set_postfix({"docs": f"{doc_count:,}"})
             else:
                 doc_text.append(line)
