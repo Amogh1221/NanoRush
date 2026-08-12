@@ -35,6 +35,7 @@ logging.basicConfig(
 log = logging.getLogger("build_dataset")
 
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+# os.environ["HF_TOKEN"] = "YOUR_HF_TOKEN_HERE"  # Uncomment and paste your token here for faster downloads
 
 BASE = Path(__file__).resolve().parent
 OUTPUT_DIR = BASE / "data"
