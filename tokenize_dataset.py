@@ -338,27 +338,34 @@ def print_summary(stats: dict) -> None:
 
 def print_training_estimate(total_tokens: int) -> None:
     """
-    Print a rough estimate for a 124M-parameter GPT on an RTX 3060 12GB.
-    Numbers are approximate — real throughput depends on compile, dtype, etc.
+    Print a rough Chinchilla estimate dynamically based on config.json (if present)
     """
-    model_params = 124_000_000
-    chinchilla_optimal = model_params * 20      # Chinchilla law
-    days_28 = 28 * 24 * 3600                   # 4 weeks in seconds
-    # RTX 3060 12GB @ bf16, 124M model, block_size=1024, grad_accum=8
-    tok_per_sec_low  = 14_000
-    tok_per_sec_high = 18_000
+    import os
+    import json
+    
+    try:
+        if os.path.exists("config.json"):
+            with open("config.json") as f:
+                cfg = json.load(f)
+            v = cfg.get("vocab_size", 32768)
+            d = cfg.get("n_embd", 768)
+            l = cfg.get("n_layer", 12)
+        else:
+            v, d, l = 32768, 768, 12
+        
+        # Rough GPT-2 parameter count: embeddings + (layers * 12 * d^2)
+        params = (v * d) + (l * 12 * (d ** 2))
+    except Exception:
+        params = 124_000_000
 
-    tokens_4w_low  = tok_per_sec_low  * days_28
-    tokens_4w_high = tok_per_sec_high * days_28
+    chinchilla_optimal = params * 20
 
     print()
     print("=" * 64)
-    print("  TRAINING BUDGET ESTIMATE  (RTX 3060 12GB, 124M model)")
+    print(f"  TRAINING BUDGET ESTIMATE  (~{params//1_000_000}M param model)")
     print("=" * 64)
     print(f"  Dataset tokens          : {human_tokens(total_tokens)}")
     print(f"  Chinchilla optimal      : {human_tokens(chinchilla_optimal)}  (20 × params)")
-    print(f"  Tokens in 4 weeks (low) : {human_tokens(tokens_4w_low)}")
-    print(f"  Tokens in 4 weeks (high): {human_tokens(tokens_4w_high)}")
     if total_tokens >= chinchilla_optimal:
         ratio = total_tokens / chinchilla_optimal
         print(f"  Your dataset is         : {ratio:.1f}x Chinchilla-optimal ✓")

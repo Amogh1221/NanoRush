@@ -47,7 +47,7 @@ def main():
     else:
         context = torch.zeros((1, 1), dtype=torch.long, device=device)
 
-    temperature = float(os.environ.get("TEMP", "0.8"))
+    temperature = float(os.environ.get("TEMPERATURE", "0.8"))
     top_k = int(os.environ.get("TOP_K", "50"))
     top_p = float(os.environ.get("TOP_P", "0.95"))
     max_new = int(os.environ.get("MAX_NEW", "500"))
