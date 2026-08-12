@@ -265,7 +265,7 @@ class Trainer:
         self.model.train()
         return out
 
-    def save_checkpoint(self, path, is_best=False, step_num=None, max_ckpt=100):
+    def save_checkpoint(self, path, is_best=False, step_num=None, max_ckpt=3):
         ckpt = {
             "model_state_dict": self.model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
