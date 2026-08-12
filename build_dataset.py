@@ -37,6 +37,12 @@ log = logging.getLogger("build_dataset")
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 # os.environ["HF_TOKEN"] = "YOUR_HF_TOKEN_HERE"  # Uncomment and paste your token here for faster downloads
 
+# Silence third-party HTTP request logging
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("datasets").setLevel(logging.WARNING)
+logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
+
+
 BASE = Path(__file__).resolve().parent
 OUTPUT_DIR = BASE / "data"
 

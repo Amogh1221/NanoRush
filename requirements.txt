@@ -8,3 +8,4 @@ tqdm>=4.65
 tensorboard>=2.12
 datasets>=2.14
 requests>=2.31
+matplotlib
