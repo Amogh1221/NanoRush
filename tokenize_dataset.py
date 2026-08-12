@@ -75,8 +75,8 @@ DEFAULT_OUT = BASE / "data"
 # How many docs/chars to batch before calling encode_batch().
 # Larger batches = faster (Rust tokenizer parallelizes internally).
 # Memory: each batch's output is written to disk immediately — no accumulation.
-BATCH_DOCS = 500
-BATCH_CHARS = 20_000_000  # ~20 MB text per batch
+BATCH_DOCS = 5000
+BATCH_CHARS = 100_000_000  # ~100 MB text per batch
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Helpers
