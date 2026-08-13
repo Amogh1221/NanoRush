@@ -292,11 +292,14 @@ class Trainer:
         # Background HuggingFace sync
         hf_token = os.environ.get("HF_TOKEN")
         if hf_token:
-            print("\n[HuggingFace] Pushing latest.pt and training_log.txt in the background...", flush=True)
+            msg = "\n[HuggingFace] Pushing latest.pt and training_log.txt in the background..."
+            if is_best:
+                msg = "\n[HuggingFace] Pushing latest.pt, best.pt, and logs in the background..."
+            print(msg, flush=True)
             try:
                 api = HfApi(token=hf_token)
                 repo_id = "Amogh1221/nanorush_training"
-                # Push checkpoint
+                # Push latest checkpoint
                 api.upload_file(
                     path_or_fileobj=path,
                     path_in_repo="checkpoints/latest.pt",
@@ -304,6 +307,15 @@ class Trainer:
                     repo_type="dataset",
                     run_as_future=True
                 )
+                # Push best checkpoint
+                if is_best and os.path.exists("checkpoints/best.pt"):
+                    api.upload_file(
+                        path_or_fileobj="checkpoints/best.pt",
+                        path_in_repo="checkpoints/best.pt",
+                        repo_id=repo_id,
+                        repo_type="dataset",
+                        run_as_future=True
+                    )
                 # Push logs
                 if os.path.exists("logs/training_log.txt"):
                     api.upload_file(
