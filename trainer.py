@@ -27,6 +27,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
+from huggingface_hub import HfApi
 
 from config import GPTConfig
 from model import GPT, EMA
@@ -202,6 +203,12 @@ class Trainer:
             print("Compiling model...")
             self.model = torch.compile(self.model, mode="default")
 
+        self.is_ddp = False
+        if torch.cuda.device_count() > 1:
+            print(f"Detected {torch.cuda.device_count()} GPUs. Wrapping with DataParallel.")
+            self.model = torch.nn.DataParallel(self.model)
+            self.is_ddp = True
+
         self.optimizer = self.model.configure_optimizers(config)
 
         self.ema = (
@@ -266,8 +273,9 @@ class Trainer:
         return out
 
     def save_checkpoint(self, path, is_best=False, step_num=None, max_ckpt=3):
+        model_state = self.model.module.state_dict() if self.is_ddp else self.model.state_dict()
         ckpt = {
-            "model_state_dict": self.model.state_dict(),
+            "model_state_dict": model_state,
             "optimizer_state_dict": self.optimizer.state_dict(),
             "iter_num": self.iter_num,
             "best_val_loss": self.best_val_loss,
@@ -291,6 +299,32 @@ class Trainer:
             while len(ckpt_files) > max_ckpt:
                 oldest = ckpt_files.pop(0)
                 os.remove(os.path.join("checkpoints", oldest))
+                
+        # Background HuggingFace sync
+        hf_token = os.environ.get("HF_TOKEN")
+        if hf_token:
+            try:
+                api = HfApi(token=hf_token)
+                repo_id = "Amogh1221/nanorush_training"
+                # Push checkpoint
+                api.upload_file(
+                    path_or_fileobj=path,
+                    path_in_repo="checkpoints/latest.pt",
+                    repo_id=repo_id,
+                    repo_type="dataset",
+                    run_as_future=True
+                )
+                # Push logs
+                if os.path.exists("logs/training_log.txt"):
+                    api.upload_file(
+                        path_or_fileobj="logs/training_log.txt",
+                        path_in_repo="logs/training_log.txt",
+                        repo_id=repo_id,
+                        repo_type="dataset",
+                        run_as_future=True
+                    )
+            except Exception as e:
+                print(f"\nHuggingFace background sync failed: {e}")
 
     def load_checkpoint(self, path):
         # Load on CPU first to avoid a GPU memory spike (checkpoint + model +

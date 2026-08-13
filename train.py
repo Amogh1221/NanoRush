@@ -2,12 +2,44 @@ import os
 import sys
 import json
 import torch
+import argparse
+from huggingface_hub import login, hf_hub_download
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128"
 
 from config import GPTConfig
 from tokenizer import Tokenizer
 from trainer import Trainer
+
+
+def sync_huggingface(repo_id: str):
+    print("Syncing dataset and tokenizer from HuggingFace...")
+    os.makedirs("data", exist_ok=True)
+    os.makedirs("tokenizer", exist_ok=True)
+    os.makedirs("checkpoints", exist_ok=True)
+    os.makedirs("logs", exist_ok=True)
+    
+    # Download dataset and tokenizer
+    try:
+        hf_hub_download(repo_id=repo_id, filename="train.bin", repo_type="dataset", local_dir="data")
+        hf_hub_download(repo_id=repo_id, filename="val.bin", repo_type="dataset", local_dir="data")
+        hf_hub_download(repo_id=repo_id, filename="tokenizer/tokenizer.json", repo_type="dataset", local_dir=".")
+    except Exception as e:
+        print(f"Failed to download dataset or tokenizer: {e}")
+    
+    # Download latest checkpoint and logs if they exist
+    print("Checking for existing checkpoints and logs...")
+    try:
+        hf_hub_download(repo_id=repo_id, filename="checkpoints/latest.pt", repo_type="dataset", local_dir=".")
+        print("Successfully downloaded latest.pt")
+    except Exception as e:
+        print("No existing checkpoint found on HuggingFace.")
+        
+    try:
+        hf_hub_download(repo_id=repo_id, filename="logs/training_log.txt", repo_type="dataset", local_dir=".")
+        print("Successfully downloaded training_log.txt")
+    except Exception as e:
+        print("No existing training log found on HuggingFace.")
 
 
 def setup_environment(config: GPTConfig):
@@ -24,6 +56,17 @@ def setup_environment(config: GPTConfig):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--hf_token", type=str, required=True, help="HuggingFace WRITE Token")
+    args = parser.parse_args()
+    
+    print("Authenticating with HuggingFace...")
+    login(token=args.hf_token)
+    os.environ["HF_TOKEN"] = args.hf_token
+    
+    repo_id = "Amogh1221/nanorush_training"
+    sync_huggingface(repo_id)
+
     config_path = "config.json"
     if os.path.exists(config_path):
         print(f"Loading config from {config_path}")
