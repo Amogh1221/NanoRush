@@ -28,6 +28,7 @@ import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 from huggingface_hub import HfApi
+from huggingface_hub.utils import disable_progress_bars
 
 from config import GPTConfig
 from model import GPT, EMA
@@ -292,11 +293,10 @@ class Trainer:
         # Background HuggingFace sync
         hf_token = os.environ.get("HF_TOKEN")
         if hf_token:
-            msg = "\n[HuggingFace] Pushing latest.pt and training_log.txt in the background..."
-            if is_best:
-                msg = "\n[HuggingFace] Pushing latest.pt, best.pt, and logs in the background..."
+            msg = f"\n[HuggingFace] Pushing latest.pt{', best.pt,' if is_best else ''} and logs in the background..."
             print(msg, flush=True)
             try:
+                disable_progress_bars()
                 api = HfApi(token=hf_token)
                 repo_id = "Amogh1221/nanorush_training"
                 # Push latest checkpoint
@@ -391,7 +391,10 @@ class Trainer:
         scaler = self.scaler
 
         # ── Log config at training start ─────────────────────────────────
-        self.flog.log_config(config, self.n_params)
+        if self.iter_num == 0:
+            self.flog.log_config(config, self.n_params)
+        else:
+            self.flog.write(f"Resumed from iteration {self.iter_num}\n")
 
         torch.cuda.empty_cache()
         model.train()
@@ -399,6 +402,7 @@ class Trainer:
         start_time = time.time()
         self._last_log_time = start_time
         self._tokens_processed = 0
+        self._steps_taken_since_resume = 0
 
         tokens_per_step = self._get_tokens_per_step()
 
@@ -506,7 +510,7 @@ class Trainer:
                     self._grad_norm_count = 0
 
                 # ── Evaluation ───────────────────────────────────────────
-                if self.iter_num % config.eval_interval == 0 and self.iter_num > 0:
+                if self.iter_num % config.eval_interval == 0 and self.iter_num > 0 and self._steps_taken_since_resume > 0:
                     losses = self.estimate_loss()
                     val_loss = losses["val"]
                     train_loss = losses["train"]
