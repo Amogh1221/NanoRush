@@ -292,6 +292,7 @@ class Trainer:
         # Background HuggingFace sync
         hf_token = os.environ.get("HF_TOKEN")
         if hf_token:
+            print("\n[HuggingFace] Pushing latest.pt and training_log.txt in the background...", flush=True)
             try:
                 api = HfApi(token=hf_token)
                 repo_id = "Amogh1221/nanorush_training"

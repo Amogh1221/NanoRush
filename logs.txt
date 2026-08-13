@@ -1,0 +1,491 @@
+Authenticating with HuggingFace...
+Syncing dataset and tokenizer from HuggingFace...
+train.bin: 100%|████████████████████████████| 8.18G/8.18G [00:22<00:00, 358MB/s]
+val.bin: 100%|█████████████████████████████| 82.3M/82.3M [00:01<00:00, 51.0MB/s]
+tokenizer.json: 2.38MB [00:00, 97.3MB/s]
+Checking for existing checkpoints and logs...
+No existing checkpoint found on HuggingFace.
+No existing training log found on HuggingFace.
+Loading config from config.json
+GPU: Tesla T4 (15.6 GB)
+AMP dtype: float16
+Model parameters: 283,171,584
+Detected 2 GPUs. Wrapping with DataParallel.
+Train windows: 4,091,762,113
+Val windows:   41,122,550
+[Step      10/35000]  loss=11.2862  lr=1.10e-06  grad_norm=24.502  tok/s=5,592  VRAM=5.1/15.6GB  ETA=23d 17h 35m
+[Step      20/35000]  loss=9.5701  lr=2.10e-06  grad_norm=8.606  tok/s=6,174  VRAM=5.1/15.6GB  ETA=22d 14h 34m
+[Step      30/35000]  loss=9.3498  lr=3.10e-06  grad_norm=3.552  tok/s=6,202  VRAM=5.1/15.6GB  ETA=22d 4h 41m
+[Step      40/35000]  loss=9.1746  lr=4.10e-06  grad_norm=2.523  tok/s=6,207  VRAM=5.1/15.6GB  ETA=21d 23h 33m
+[Step      50/35000]  loss=9.2155  lr=5.10e-06  grad_norm=1.879  tok/s=6,228  VRAM=5.1/15.6GB  ETA=21d 20h 5m
+ 
+════════════════════════════════════════════════════════
+  EVALUATION @ Step 50 / 35000   (0.1%)
+════════════════════════════════════════════════════════
+  Train Loss     : 9.0887
+  Val Loss       : 9.0851  (best: inf  NEW BEST ★)
+  Perplexity     : 8822.82
+  EMA Val Loss   : 10.3798
+  Learning Rate  : 5.10e-06
+  Avg Grad Norm  : 0.000
+  Tokens/sec     : 5,444
+  VRAM           : 5.1 / 15.6 GB
+  Elapsed        : 00:50:09
+  ETA            : 24d 8h 18m
+════════════════════════════════════════════════════════
+Processing Files (0 / 0)      : |                  |  0.00B /  0.00B            
+New Data Upload               : |                  |  0.00B /  0.00B            
+ 
+  checkpoints/latest.pt       :  19%|██▋           | 22.7MB /  119MB            
+ 
+Processing Files (0 / 1)      :  19%|██▋           | 22.7MB /  119MB, 37.9MB/s  
+New Data Upload               :  19%|██▋           | 22.7MB /  119MB, 37.9MB/s  
+ 
+Processing Files (0 / 1)      :  56%|███████▊      | 67.0MB /  119MB, 83.8MB/s  
+New Data Upload               :  56%|███████▊      | 67.0MB /  119MB, 83.8MB/s  
+ 
+  checkpoints/latest.pt       :  56%|███████▊      | 67.0MB /  119MB            
+ 
+  checkpoints/latest.pt       :  56%|███████▊      | 67.0MB /  119MB            
+ 
+  checkpoints/latest.pt       :  56%|███████▊      | 67.0MB /  119MB            
+ 
+Processing Files (0 / 1)      :  56%|███████▊      | 67.1MB /  119MB, 41.9MB/s  
+New Data Upload               :  56%|███████▊      | 67.1MB /  119MB, 41.9MB/s  
+ 
+Processing Files (0 / 1)      :  98%|█████████████▊|  118MB /  119MB, 65.3MB/s  
+New Data Upload               :  98%|█████████████▊|  118MB /  119MB, 65.3MB/s  
+ 
+Processing Files (0 / 1)      : 100%|█████████████▉|  119MB /  119MB, 59.6MB/s  
+New Data Upload               : 100%|█████████████▉|  119MB /  119MB, 59.6MB/s  
+ 
+  checkpoints/latest.pt       : 100%|█████████████▉|  119MB /  119MB            
+ 
+Processing Files (1 / 1)      : 100%|██████████████|  119MB /  119MB, 49.8MB/s  
+New Data Upload               : 100%|██████████████|  119MB /  119MB, 49.8MB/s  
+ 
+  checkpoints/latest.pt       : 100%|██████████████|  119MB /  119MB            
+ 
+Processing Files (1 / 1)      : 100%|██████████████|  119MB /  119MB, 45.9MB/s  
+New Data Upload               : 100%|██████████████|  119MB /  119MB, 45.9MB/s  
+  checkpoints/latest.pt       : 100%|██████████████|  119MB /  119MB            
+Processing Files (0 / 0)      : |                  |  0.00B /  0.00B            
+New Data Upload               : |                  |  0.00B /  0.00B            
+ 
+  checkpoints/latest.pt       :   2%|▎             | 95.9MB / 4.53GB            
+ 
+Processing Files (0 / 1)      :   2%|▎             | 95.9MB / 4.53GB,   ???B/s  
+ 
+Processing Files (0 / 1)      :   3%|▎             |  119MB / 4.53GB,  117MB/s  
+ 
+  checkpoints/latest.pt       :   3%|▎             |  119MB / 4.53GB            
+ 
+Processing Files (0 / 1)      :   3%|▍             |  131MB / 4.53GB, 58.5MB/s  
+New Data Upload               :   9%|█▏            | 11.6MB /  134MB, 19.4MB/s  
+ 
+Processing Files (0 / 1)      :   4%|▌             |  186MB / 4.53GB,  113MB/s  
+New Data Upload               :  50%|██████▉       | 66.5MB /  134MB, 83.2MB/s  
+ 
+Processing Files (0 / 1)      :   4%|▌             |  186MB / 4.53GB, 90.5MB/s  
+New Data Upload               :  50%|██████▉       | 67.0MB /  134MB, 67.0MB/s  
+ 
+  checkpoints/latest.pt       :   4%|▌             |  186MB / 4.53GB            
+ 
+  checkpoints/latest.pt       :   4%|▌             |  186MB / 4.53GB            
+ 
+Processing Files (0 / 1)      :   4%|▌             |  186MB / 4.53GB, 56.6MB/s  
+New Data Upload               :  33%|████▋         | 67.1MB /  201MB, 41.9MB/s  
+ 
+Processing Files (0 / 1)      :   5%|▋             |  242MB / 4.53GB, 81.4MB/s  
+New Data Upload               :  61%|████████▌     |  123MB /  201MB, 68.4MB/s  
+ 
+Processing Files (0 / 1)      :   6%|▊             |  253MB / 4.53GB, 78.8MB/s  
+New Data Upload               :  50%|██████▉       |  134MB /  268MB, 67.0MB/s  
+ 
+Processing Files (0 / 1)      :   7%|▉             |  295MB / 4.53GB, 90.5MB/s  
+New Data Upload               :  65%|█████████▏    |  176MB /  268MB, 79.8MB/s  
+ 
+Processing Files (0 / 1)      :   7%|▉             |  320MB / 4.53GB, 93.6MB/s  
+New Data Upload               :  75%|██████████▍   |  201MB /  268MB, 83.8MB/s  
+ 
+Processing Files (0 / 1)      :   8%|█▏            |  368MB / 4.53GB,  105MB/s  
+New Data Upload               :  74%|██████████▎   |  248MB /  335MB, 95.5MB/s  
+ 
+Processing Files (0 / 1)      :   9%|█▏            |  387MB / 4.53GB,  104MB/s  
+New Data Upload               :  80%|███████████▏  |  268MB /  335MB, 95.6MB/s  
+ 
+Processing Files (0 / 1)      :   9%|█▎            |  410MB / 4.53GB,  105MB/s  
+New Data Upload               :  72%|██████████    |  291MB /  402MB, 96.8MB/s  
+ 
+Processing Files (0 / 1)      :  10%|█▍            |  454MB / 4.53GB,  112MB/s  
+New Data Upload               :  83%|███████████▋  |  335MB /  402MB,  105MB/s  
+ 
+Processing Files (0 / 1)      :  11%|█▌            |  510MB / 4.53GB,  122MB/s  
+New Data Upload               :  83%|███████████▋  |  391MB /  469MB,  115MB/s  
+ 
+Processing Files (0 / 1)      :  12%|█▌            |  522MB / 4.53GB,  118MB/s  
+New Data Upload               :  75%|██████████▍   |  402MB /  536MB,  112MB/s  
+ 
+Processing Files (0 / 1)      :  13%|█▊            |  588MB / 4.53GB,  130MB/s  
+New Data Upload               :  87%|████████████▏ |  469MB /  536MB,  123MB/s  
+ 
+Processing Files (0 / 1)      :  13%|█▊            |  588MB / 4.53GB,  123MB/s  
+New Data Upload               :  87%|████████████▏ |  469MB /  536MB,  117MB/s  
+ 
+Processing Files (0 / 1)      :  14%|█▉            |  641MB / 4.53GB,  130MB/s  
+New Data Upload               :  86%|████████████  |  521MB /  603MB,  124MB/s  
+ 
+Processing Files (0 / 1)      :  14%|██            |  655MB / 4.53GB,  127MB/s  
+New Data Upload               :  89%|████████████▍ |  536MB /  603MB,  122MB/s  
+ 
+Processing Files (0 / 1)      :  16%|██▏           |  708MB / 4.53GB,  133MB/s  
+New Data Upload               :  88%|████████████▎ |  588MB /  671MB,  128MB/s  
+ 
+Processing Files (0 / 1)      :  16%|██▏           |  726MB / 4.53GB,  131MB/s  
+New Data Upload               :  90%|████████████▋ |  606MB /  671MB,  126MB/s  
+ 
+Processing Files (0 / 1)      :  17%|██▍           |  790MB / 4.53GB,  139MB/s  
+New Data Upload               :  91%|████████████▋ |  671MB /  738MB,  134MB/s  
+ 
+  checkpoints/latest.pt       :  17%|██▍           |  790MB / 4.53GB            
+ 
+Processing Files (0 / 1)      :  19%|██▋           |  857MB / 4.53GB,  141MB/s  
+New Data Upload               :  92%|████████████▊ |  738MB /  805MB,  137MB/s  
+ 
+  checkpoints/latest.pt       :  19%|██▋           |  857MB / 4.53GB            
+ 
+Processing Files (0 / 1)      :  20%|██▊           |  924MB / 4.53GB,  143MB/s  
+New Data Upload               :  92%|████████████▉ |  805MB /  872MB,  139MB/s  
+ 
+Processing Files (0 / 1)      :  20%|██▊           |  928MB / 4.53GB,  139MB/s  
+New Data Upload               :  86%|████████████  |  808MB /  939MB,  135MB/s  
+ 
+Processing Files (0 / 1)      :  22%|███           |  991MB / 4.53GB,  144MB/s  
+New Data Upload               :  93%|████████████▉ |  872MB /  939MB,  141MB/s  
+ 
+  checkpoints/latest.pt       :  22%|███           |  991MB / 4.53GB            
+ 
+Processing Files (0 / 1)      :  23%|███▎          | 1.06GB / 4.53GB,  146MB/s  
+New Data Upload               :  93%|█████████████ |  938MB / 1.01GB,  142MB/s  
+ 
+Processing Files (0 / 1)      :  23%|███▎          | 1.06GB / 4.53GB,  141MB/s  
+New Data Upload               :  93%|█████████████ |  938MB / 1.01GB,  138MB/s  
+ 
+Processing Files (0 / 1)      :  24%|███▍          | 1.10GB / 4.53GB,  143MB/s  
+New Data Upload               :  91%|████████████▊ |  979MB / 1.07GB,  140MB/s  
+ 
+Processing Files (0 / 1)      :  25%|███▍          | 1.12GB / 4.53GB,  143MB/s  
+New Data Upload               :  94%|█████████████ | 1.00GB / 1.07GB,  140MB/s  
+ 
+Processing Files (0 / 1)      :  25%|███▌          | 1.14GB / 4.53GB,  141MB/s  
+New Data Upload               :  89%|████████████▍ | 1.02GB / 1.14GB,  137MB/s  
+ 
+Processing Files (0 / 1)      :  26%|███▋          | 1.19GB / 4.53GB,  144MB/s  
+New Data Upload               :  94%|█████████████▏| 1.07GB / 1.14GB,  141MB/s  
+ 
+Processing Files (0 / 1)      :  27%|███▊          | 1.24GB / 4.53GB,  146MB/s  
+New Data Upload               :  93%|████████████▉ | 1.12GB / 1.21GB,  143MB/s  
+ 
+Processing Files (0 / 1)      :  28%|███▉          | 1.26GB / 4.53GB,  145MB/s  
+New Data Upload               :  94%|█████████████▏| 1.14GB / 1.21GB,  142MB/s  
+ 
+Processing Files (0 / 1)      :  29%|████          | 1.31GB / 4.53GB,  148MB/s  
+New Data Upload               :  94%|█████████████ | 1.19GB / 1.27GB,  146MB/s  
+ 
+Processing Files (0 / 1)      :  29%|████          | 1.33GB / 4.53GB,  146MB/s  
+New Data Upload               :  95%|█████████████▎| 1.21GB / 1.27GB,  144MB/s  
+ 
+Processing Files (0 / 1)      :  30%|████▏         | 1.35GB / 4.53GB,  145MB/s  
+New Data Upload               :  91%|████████████▊ | 1.23GB / 1.34GB,  143MB/s  
+ 
+Processing Files (0 / 1)      :  31%|████▎         | 1.39GB / 4.53GB,  147MB/s  
+New Data Upload               :  95%|█████████████▎| 1.27GB / 1.34GB,  145MB/s  
+ 
+Processing Files (0 / 1)      :  32%|████▍         | 1.43GB / 4.53GB,  148MB/s  
+New Data Upload               :  93%|█████████████ | 1.31GB / 1.41GB,  146MB/s  
+ 
+Processing Files (0 / 1)      :  32%|████▌         | 1.46GB / 4.53GB,  148MB/s  
+New Data Upload               :  95%|█████████████▎| 1.34GB / 1.41GB,  146MB/s  
+ 
+Processing Files (0 / 1)      :  33%|████▌         | 1.49GB / 4.53GB,  148MB/s  
+New Data Upload               :  93%|█████████████ | 1.37GB / 1.48GB,  146MB/s  
+ 
+Processing Files (0 / 1)      :  34%|████▋         | 1.53GB / 4.53GB,  149MB/s  
+New Data Upload               :  95%|█████████████▎| 1.41GB / 1.48GB,  147MB/s  
+ 
+Processing Files (0 / 1)      :  34%|████▊         | 1.56GB / 4.53GB,  150MB/s  
+New Data Upload               :  94%|█████████████ | 1.44GB / 1.54GB,  147MB/s  
+ 
+Processing Files (0 / 1)      :  35%|████▉         | 1.59GB / 4.53GB,  150MB/s  
+New Data Upload               :  96%|█████████████▍| 1.47GB / 1.54GB,  147MB/s  
+ 
+Processing Files (0 / 1)      :  36%|█████         | 1.63GB / 4.53GB,  150MB/s  
+New Data Upload               :  94%|█████████████ | 1.51GB / 1.61GB,  148MB/s  
+ 
+Processing Files (0 / 1)      :  37%|█████▏        | 1.66GB / 4.53GB,  151MB/s  
+New Data Upload               :  96%|█████████████▍| 1.54GB / 1.61GB,  151MB/s  
+ 
+Processing Files (0 / 1)      :  37%|█████▏        | 1.68GB / 4.53GB,  153MB/s  
+New Data Upload               :  93%|█████████████ | 1.56GB / 1.68GB,  153MB/s  
+ 
+Processing Files (0 / 1)      :  38%|█████▎        | 1.73GB / 4.53GB,  157MB/s  
+New Data Upload               :  96%|█████████████▍| 1.61GB / 1.68GB,  157MB/s  
+ 
+Processing Files (0 / 1)      :  38%|█████▍        | 1.74GB / 4.53GB,  153MB/s  
+New Data Upload               :  93%|█████████████ | 1.62GB / 1.74GB,  153MB/s  
+ 
+Processing Files (0 / 1)      :  40%|█████▌        | 1.80GB / 4.53GB,  158MB/s  
+New Data Upload               :  96%|█████████████▍| 1.68GB / 1.74GB,  158MB/s  
+ 
+Processing Files (0 / 1)      :  40%|█████▌        | 1.80GB / 4.53GB,  158MB/s  
+New Data Upload               :  93%|█████████████ | 1.68GB / 1.81GB,  158MB/s  
+ 
+Processing Files (0 / 1)      :  41%|█████▊        | 1.86GB / 4.53GB,  164MB/s  
+New Data Upload               :  96%|█████████████▍| 1.74GB / 1.81GB,  164MB/s  
+ 
+Processing Files (0 / 1)      :  42%|█████▊        | 1.89GB / 4.53GB,  167MB/s  
+New Data Upload               :  94%|█████████████▏| 1.77GB / 1.88GB,  167MB/s  
+ 
+Processing Files (0 / 1)      :  43%|█████▉        | 1.93GB / 4.53GB,  165MB/s  
+New Data Upload               :  96%|█████████████▍| 1.81GB / 1.88GB,  165MB/s  
+ 
+Processing Files (0 / 1)      :  44%|██████        | 1.98GB / 4.53GB,  169MB/s  
+New Data Upload               :  96%|█████████████▍| 1.86GB / 1.95GB,  169MB/s  
+ 
+Processing Files (0 / 1)      :  44%|██████▏       | 2.00GB / 4.53GB,  167MB/s  
+New Data Upload               :  96%|█████████████▌| 1.88GB / 1.95GB,  167MB/s  
+ 
+Processing Files (0 / 1)      :  44%|██████▏       | 2.02GB / 4.53GB,  166MB/s  
+New Data Upload               :  94%|█████████████▏| 1.90GB / 2.01GB,  166MB/s  
+ 
+Processing Files (0 / 1)      :  46%|██████▍       | 2.06GB / 4.53GB,  166MB/s  
+New Data Upload               :  97%|█████████████▌| 1.94GB / 2.01GB,  166MB/s  
+ 
+Processing Files (0 / 1)      :  47%|██████▌       | 2.11GB / 4.53GB,  169MB/s  
+New Data Upload               :  96%|█████████████▍| 1.99GB / 2.08GB,  169MB/s  
+ 
+Processing Files (0 / 1)      :  47%|██████▌       | 2.13GB / 4.53GB,  169MB/s  
+New Data Upload               :  97%|█████████████▌| 2.01GB / 2.08GB,  169MB/s  
+ 
+Processing Files (0 / 1)      :  48%|██████▊       | 2.20GB / 4.53GB,  171MB/s  
+New Data Upload               :  97%|█████████████▌| 2.08GB / 2.15GB,  171MB/s  
+ 
+Processing Files (0 / 1)      :  49%|██████▊       | 2.21GB / 4.53GB,  166MB/s  
+New Data Upload               :  94%|█████████████▏| 2.09GB / 2.21GB,  166MB/s  
+ 
+  checkpoints/latest.pt       :  50%|███████       | 2.28GB / 4.53GB            
+ 
+  checkpoints/latest.pt       :  51%|███████       | 2.29GB / 4.53GB            
+ 
+Processing Files (0 / 1)      :  51%|███████▏      | 2.33GB / 4.53GB,  171MB/s  
+New Data Upload               :  97%|█████████████▌| 2.21GB / 2.28GB,  171MB/s  
+ 
+Processing Files (0 / 1)      :  52%|███████▎      | 2.37GB / 4.53GB,  170MB/s  
+New Data Upload               :  96%|█████████████▍| 2.25GB / 2.35GB,  170MB/s  
+ 
+Processing Files (0 / 1)      :  53%|███████▍      | 2.40GB / 4.53GB,  171MB/s  
+New Data Upload               :  97%|█████████████▌| 2.28GB / 2.35GB,  171MB/s  
+ 
+Processing Files (0 / 1)      :  54%|███████▌      | 2.43GB / 4.53GB,  169MB/s  
+New Data Upload               :  96%|█████████████▍| 2.31GB / 2.41GB,  169MB/s  
+ 
+Processing Files (0 / 1)      :  54%|███████▌      | 2.47GB / 4.53GB,  171MB/s  
+New Data Upload               :  97%|█████████████▌| 2.35GB / 2.41GB,  171MB/s  
+ 
+Processing Files (0 / 1)      :  55%|███████▊      | 2.51GB / 4.53GB,  169MB/s  
+New Data Upload               :  96%|█████████████▍| 2.39GB / 2.48GB,  169MB/s  
+ 
+Processing Files (0 / 1)      :  56%|███████▊      | 2.53GB / 4.53GB,  171MB/s  
+New Data Upload               :  97%|█████████████▌| 2.41GB / 2.48GB,  171MB/s  
+ 
+Processing Files (0 / 1)      :  57%|███████▉      | 2.58GB / 4.53GB,  169MB/s  
+New Data Upload               :  96%|█████████████▌| 2.46GB / 2.55GB,  169MB/s  
+ 
+Processing Files (0 / 1)      :  57%|████████      | 2.60GB / 4.53GB,  171MB/s  
+New Data Upload               :  97%|█████████████▋| 2.48GB / 2.55GB,  171MB/s  
+ 
+Processing Files (0 / 1)      :  58%|████████▏     | 2.64GB / 4.53GB,  168MB/s  
+New Data Upload               :  96%|█████████████▍| 2.52GB / 2.62GB,  168MB/s  
+ 
+Processing Files (0 / 1)      :  59%|████████▏     | 2.67GB / 4.53GB,  171MB/s  
+New Data Upload               :  97%|█████████████▋| 2.55GB / 2.62GB,  171MB/s  
+ 
+Processing Files (0 / 1)      :  60%|████████▍     | 2.72GB / 4.53GB,  169MB/s  
+New Data Upload               :  97%|█████████████▌| 2.60GB / 2.68GB,  169MB/s  
+ 
+Processing Files (0 / 1)      :  61%|████████▍     | 2.75GB / 4.53GB,  172MB/s  
+New Data Upload               :  96%|█████████████▍| 2.63GB / 2.75GB,  172MB/s  
+ 
+Processing Files (0 / 1)      :  62%|████████▋     | 2.80GB / 4.53GB,  171MB/s  
+New Data Upload               :  98%|█████████████▋| 2.68GB / 2.75GB,  171MB/s  
+ 
+Processing Files (0 / 1)      :  62%|████████▋     | 2.82GB / 4.53GB,  173MB/s  
+New Data Upload               :  96%|█████████████▍| 2.70GB / 2.82GB,  173MB/s  
+ 
+Processing Files (0 / 1)      :  63%|████████▊     | 2.87GB / 4.53GB,  174MB/s  
+New Data Upload               :  98%|█████████████▋| 2.75GB / 2.82GB,  174MB/s  
+ 
+  checkpoints/latest.pt       :  63%|████████▊     | 2.87GB / 4.53GB            
+ 
+Processing Files (0 / 1)      :  65%|█████████     | 2.94GB / 4.53GB,  176MB/s  
+New Data Upload               :  98%|█████████████▋| 2.82GB / 2.88GB,  176MB/s  
+ 
+Processing Files (0 / 1)      :  65%|█████████     | 2.94GB / 4.53GB,  172MB/s  
+New Data Upload               :  96%|█████████████▍| 2.82GB / 2.95GB,  172MB/s  
+ 
+Processing Files (0 / 1)      :  66%|█████████▎    | 3.00GB / 4.53GB,  173MB/s  
+New Data Upload               :  98%|█████████████▋| 2.88GB / 2.95GB,  173MB/s  
+ 
+Processing Files (0 / 1)      :  67%|█████████▍    | 3.04GB / 4.53GB,  174MB/s  
+New Data Upload               :  97%|█████████████▌| 2.92GB / 3.02GB,  174MB/s  
+ 
+Processing Files (0 / 1)      :  68%|█████████▍    | 3.07GB / 4.53GB,  172MB/s  
+New Data Upload               :  98%|█████████████▋| 2.95GB / 3.02GB,  172MB/s  
+ 
+Processing Files (0 / 1)      :  69%|█████████▋    | 3.14GB / 4.53GB,  177MB/s  
+New Data Upload               :  98%|█████████████▋| 3.02GB / 3.09GB,  177MB/s  
+ 
+Processing Files (0 / 1)      :  69%|█████████▋    | 3.14GB / 4.53GB,  176MB/s  
+New Data Upload               :  98%|█████████████▋| 3.02GB / 3.09GB,  176MB/s  
+ 
+Processing Files (0 / 1)      :  70%|█████████▊    | 3.18GB / 4.53GB,  175MB/s  
+New Data Upload               :  97%|█████████████▌| 3.06GB / 3.15GB,  175MB/s  
+ 
+Processing Files (0 / 1)      :  71%|█████████▉    | 3.20GB / 4.53GB,  174MB/s  
+New Data Upload               :  98%|█████████████▋| 3.08GB / 3.15GB,  174MB/s  
+ 
+Processing Files (0 / 1)      :  72%|██████████    | 3.27GB / 4.53GB,  177MB/s  
+New Data Upload               :  98%|█████████████▋| 3.15GB / 3.22GB,  177MB/s  
+ 
+Processing Files (0 / 1)      :  72%|██████████    | 3.28GB / 4.53GB,  175MB/s  
+New Data Upload               :  96%|█████████████▍| 3.16GB / 3.29GB,  175MB/s  
+ 
+Processing Files (0 / 1)      :  74%|██████████▎   | 3.34GB / 4.53GB,  178MB/s  
+New Data Upload               :  98%|█████████████▋| 3.22GB / 3.29GB,  178MB/s  
+ 
+Processing Files (0 / 1)      :  74%|██████████▍   | 3.36GB / 4.53GB,  176MB/s  
+New Data Upload               :  97%|█████████████▌| 3.24GB / 3.35GB,  176MB/s  
+ 
+Processing Files (0 / 1)      :  75%|██████████▌   | 3.41GB / 4.53GB,  178MB/s  
+New Data Upload               :  98%|█████████████▋| 3.29GB / 3.35GB,  178MB/s  
+ 
+Processing Files (0 / 1)      :  76%|██████████▌   | 3.43GB / 4.53GB,  176MB/s  
+New Data Upload               :  97%|█████████████▌| 3.31GB / 3.42GB,  176MB/s  
+ 
+Processing Files (0 / 1)      :  77%|██████████▋   | 3.47GB / 4.53GB,  178MB/s  
+New Data Upload               :  98%|█████████████▋| 3.35GB / 3.42GB,  178MB/s  
+ 
+Processing Files (0 / 1)      :  77%|██████████▊   | 3.50GB / 4.53GB,  178MB/s  
+New Data Upload               :  97%|█████████████▌| 3.38GB / 3.49GB,  178MB/s  
+ 
+Processing Files (0 / 1)      :  78%|██████████▉   | 3.54GB / 4.53GB,  178MB/s  
+New Data Upload               :  98%|█████████████▋| 3.42GB / 3.49GB,  178MB/s  
+ 
+Processing Files (0 / 1)      :  78%|██████████▉   | 3.55GB / 4.53GB,  177MB/s  
+New Data Upload               :  97%|█████████████▌| 3.43GB / 3.55GB,  177MB/s  
+ 
+Processing Files (0 / 1)      :  80%|███████████▏  | 3.61GB / 4.53GB,  178MB/s  
+New Data Upload               :  98%|█████████████▋| 3.49GB / 3.55GB,  178MB/s  
+ 
+  checkpoints/latest.pt       :  80%|███████████▏  | 3.61GB / 4.53GB            
+ 
+Processing Files (0 / 1)      :  81%|███████████▎  | 3.66GB / 4.53GB,  176MB/s  
+New Data Upload               :  98%|█████████████▋| 3.54GB / 3.62GB,  176MB/s  
+ 
+Processing Files (0 / 1)      :  81%|███████████▍  | 3.69GB / 4.53GB,  176MB/s  
+New Data Upload               :  97%|█████████████▌| 3.57GB / 3.69GB,  176MB/s  
+ 
+Processing Files (0 / 1)      :  83%|███████████▌  | 3.74GB / 4.53GB,  178MB/s  
+New Data Upload               :  98%|█████████████▋| 3.62GB / 3.69GB,  178MB/s  
+ 
+Processing Files (0 / 1)      :  83%|███████████▋  | 3.77GB / 4.53GB,  175MB/s  
+New Data Upload               :  97%|█████████████▌| 3.65GB / 3.76GB,  175MB/s  
+ 
+Processing Files (0 / 1)      :  84%|███████████▊  | 3.81GB / 4.53GB,  178MB/s  
+New Data Upload               :  98%|█████████████▋| 3.69GB / 3.76GB,  178MB/s  
+ 
+Processing Files (0 / 1)      :  84%|███████████▊  | 3.81GB / 4.53GB,  176MB/s  
+New Data Upload               :  97%|█████████████▌| 3.69GB / 3.82GB,  176MB/s  
+ 
+Processing Files (0 / 1)      :  85%|███████████▉  | 3.86GB / 4.53GB,  176MB/s  
+New Data Upload               :  98%|█████████████▋| 3.74GB / 3.82GB,  176MB/s  
+ 
+Processing Files (0 / 1)      :  86%|████████████  | 3.91GB / 4.53GB,  176MB/s  
+New Data Upload               :  97%|█████████████▋| 3.79GB / 3.89GB,  176MB/s  
+ 
+Processing Files (0 / 1)      :  87%|████████████▏ | 3.94GB / 4.53GB,  178MB/s  
+New Data Upload               :  98%|█████████████▊| 3.82GB / 3.89GB,  178MB/s  
+ 
+Processing Files (0 / 1)      :  88%|████████████▎ | 3.98GB / 4.53GB,  175MB/s  
+New Data Upload               :  98%|█████████████▋| 3.86GB / 3.96GB,  175MB/s  
+ 
+Processing Files (0 / 1)      :  88%|████████████▍ | 4.01GB / 4.53GB,  177MB/s  
+New Data Upload               :  98%|█████████████▊| 3.89GB / 3.96GB,  177MB/s  
+ 
+Processing Files (0 / 1)      :  89%|████████████▍ | 4.02GB / 4.53GB,  174MB/s  
+New Data Upload               :  97%|█████████████▌| 3.90GB / 4.02GB,  174MB/s  
+ 
+Processing Files (0 / 1)      :  90%|████████████▌ | 4.08GB / 4.53GB,  175MB/s  
+New Data Upload               :  98%|█████████████▊| 3.96GB / 4.02GB,  175MB/s  
+ 
+Processing Files (0 / 1)      :  90%|████████████▋ | 4.09GB / 4.53GB,  172MB/s  
+New Data Upload               :  97%|█████████████▌| 3.97GB / 4.09GB,  172MB/s  
+ 
+Processing Files (0 / 1)      :  91%|████████████▊ | 4.14GB / 4.53GB,  174MB/s  
+New Data Upload               :  98%|█████████████▊| 4.02GB / 4.09GB,  174MB/s  
+ 
+Processing Files (0 / 1)      :  92%|████████████▉ | 4.17GB / 4.53GB,  174MB/s  
+New Data Upload               :  97%|█████████████▋| 4.05GB / 4.16GB,  174MB/s  
+ 
+Processing Files (0 / 1)      :  93%|█████████████ | 4.21GB / 4.53GB,  174MB/s  
+New Data Upload               :  98%|█████████████▊| 4.09GB / 4.16GB,  174MB/s  
+ 
+Processing Files (0 / 1)      :  93%|█████████████ | 4.21GB / 4.53GB,  171MB/s  
+New Data Upload               :  97%|█████████████▌| 4.10GB / 4.23GB,  171MB/s  
+ 
+Processing Files (0 / 1)      :  94%|█████████████▏| 4.28GB / 4.53GB,  173MB/s  
+New Data Upload               :  98%|█████████████▊| 4.16GB / 4.23GB,  173MB/s  
+ 
+Processing Files (0 / 1)      :  94%|█████████████▏| 4.28GB / 4.53GB,  171MB/s  
+New Data Upload               :  97%|█████████████▌| 4.16GB / 4.29GB,  171MB/s  
+ 
+Processing Files (0 / 1)      :  96%|█████████████▍| 4.34GB / 4.53GB,  173MB/s  
+New Data Upload               :  98%|█████████████▊| 4.22GB / 4.29GB,  173MB/s  
+ 
+Processing Files (0 / 1)      :  96%|█████████████▍| 4.36GB / 4.53GB,  173MB/s  
+New Data Upload               :  97%|█████████████▋| 4.25GB / 4.36GB,  173MB/s  
+ 
+Processing Files (0 / 1)      :  97%|█████████████▋| 4.41GB / 4.53GB,  174MB/s  
+New Data Upload               :  98%|█████████████▊| 4.29GB / 4.36GB,  174MB/s  
+ 
+Processing Files (0 / 1)      :  98%|█████████████▋| 4.45GB / 4.53GB,  175MB/s  
+New Data Upload               :  98%|█████████████▋| 4.33GB / 4.41GB,  175MB/s  
+ 
+Processing Files (0 / 1)      :  99%|█████████████▊| 4.48GB / 4.53GB,  173MB/s  
+New Data Upload               :  99%|█████████████▊| 4.36GB / 4.41GB,  173MB/s  
+ 
+Processing Files (0 / 1)      : 100%|█████████████▉| 4.51GB / 4.53GB,  173MB/s  
+New Data Upload               : 100%|█████████████▉| 4.39GB / 4.41GB,  173MB/s  
+ 
+Processing Files (0 / 1)      : 100%|█████████████▉| 4.53GB / 4.53GB,  170MB/s  
+New Data Upload               : 100%|█████████████▉| 4.41GB / 4.41GB,  170MB/s  
+ 
+Processing Files (0 / 1)      : 100%|█████████████▉| 4.53GB / 4.53GB,  167MB/s  
+New Data Upload               : 100%|█████████████▉| 4.41GB / 4.41GB,  167MB/s  
+ 
+Processing Files (1 / 1)      : 100%|██████████████| 4.53GB / 4.53GB,  163MB/s  
+New Data Upload               : 100%|██████████████| 4.41GB / 4.41GB,  163MB/s  
+ 
+  checkpoints/latest.pt       : 100%|██████████████| 4.53GB / 4.53GB            
+ 
+  checkpoints/latest.pt       : 100%|██████████████| 4.53GB / 4.53GB            
+ 
+  checkpoints/latest.pt       : 100%|██████████████| 4.53GB / 4.53GB            
+ 
+  checkpoints/latest.pt       : 100%|██████████████| 4.53GB / 4.53GB            
+ 
+Processing Files (1 / 1)      : 100%|██████████████| 4.53GB / 4.53GB,  150MB/s  
+New Data Upload               : 100%|██████████████| 4.41GB / 4.41GB,  150MB/s  
+  checkpoints/latest.pt       : 100%|██████████████| 4.53GB / 4.53GB            
+No files have been modified since last commit. Skipping to prevent empty commit.
+Training:   0%| | 59/35000 [57:52<572:14:48, 58.96s/it, train=9.0887, val=9.0851

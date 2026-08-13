@@ -40,6 +40,9 @@ def sync_huggingface(repo_id: str):
         print("Successfully downloaded training_log.txt")
     except Exception as e:
         print("No existing training log found on HuggingFace.")
+        
+    # Disable HF progress bars for background uploads during training
+    os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
 
 
 def setup_environment(config: GPTConfig):
