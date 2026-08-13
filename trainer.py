@@ -336,8 +336,14 @@ class Trainer:
         base_model = self.model.module if hasattr(self.model, "module") else self.model
         base_model.load_state_dict(ckpt["model_state_dict"])
         self.optimizer.load_state_dict(ckpt["optimizer_state_dict"])
-        self.iter_num = ckpt["iter_num"]
+        self.iter_num = ckpt.get("iter_num", 0)
         self.best_val_loss = ckpt.get("best_val_loss", float("inf"))
+
+        # Backwards compatibility for checkpoints saved with the old off-by-one bug
+        if self.iter_num > 0 and self.iter_num % self.config.save_interval == 0:
+            self.iter_num += 1
+
+        print(f"Resumed from iteration {self.iter_num}")
         if self.ema is not None and "ema" in ckpt:
             self.ema.load_state_dict(ckpt["ema"])
             self.ema.shadow = {
@@ -347,7 +353,6 @@ class Trainer:
             self.scaler.load_state_dict(ckpt["scaler"])
         del ckpt
         torch.cuda.empty_cache()
-        print(f"Resumed from iteration {self.iter_num}")
 
     def generate_samples(self):
         base_model = self.model.module if hasattr(self.model, "module") else self.model
@@ -594,9 +599,9 @@ class Trainer:
                     # Save checkpoint
                     if is_best:
                         self.best_val_loss = val_loss
-                        self.save_checkpoint("checkpoints/latest.pt", is_best=True, step_num=self.iter_num)
+                        self.save_checkpoint("checkpoints/latest.pt", is_best=True, step_num=self.iter_num + 1)
                     else:
-                        self.save_checkpoint("checkpoints/latest.pt", step_num=self.iter_num)
+                        self.save_checkpoint("checkpoints/latest.pt", step_num=self.iter_num + 1)
 
                     # Defrag the CUDA caching allocator after eval's memory spike
                     torch.cuda.empty_cache()
@@ -604,10 +609,11 @@ class Trainer:
                 if self.iter_num % config.gen_interval == 0 and self.iter_num > 0:
                     self.generate_samples()
 
-                if self.iter_num % config.save_interval == 0 and self.iter_num > 0:
-                    self.save_checkpoint("checkpoints/latest.pt", step_num=self.iter_num)
+                if self.iter_num % config.save_interval == 0 and self.iter_num > 0 and self._steps_taken_since_resume > 0:
+                    self.save_checkpoint("checkpoints/latest.pt", step_num=self.iter_num + 1)
 
                 self.iter_num += 1
+                self._steps_taken_since_resume += 1
                 pbar.update(1)
 
         pbar.close()
