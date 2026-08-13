@@ -209,7 +209,7 @@ class Trainer:
             self.model = torch.nn.DataParallel(self.model)
             self.is_ddp = True
 
-        self.optimizer = self.model.configure_optimizers(config)
+        self.optimizer = (self.model.module if self.is_ddp else self.model).configure_optimizers(config)
 
         self.ema = (
             EMA(self.model, decay=config.ema_decay) if config.use_ema else None
@@ -289,17 +289,6 @@ class Trainer:
         if is_best:
             torch.save(ckpt, "checkpoints/best.pt")
 
-        if step_num is not None:
-            step_path = f"checkpoints/step_{step_num:07d}.pt"
-            if os.path.realpath(path) != os.path.realpath(step_path):
-                torch.save(ckpt, step_path)
-            ckpt_files = sorted(
-                [f for f in os.listdir("checkpoints") if re.match(r"step_\d{7}\.pt$", f)]
-            )
-            while len(ckpt_files) > max_ckpt:
-                oldest = ckpt_files.pop(0)
-                os.remove(os.path.join("checkpoints", oldest))
-                
         # Background HuggingFace sync
         hf_token = os.environ.get("HF_TOKEN")
         if hf_token:
