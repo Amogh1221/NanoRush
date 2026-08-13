@@ -89,12 +89,14 @@ def _format_elapsed(seconds: float) -> str:
 
 
 def _vram_gb() -> tuple[float, float]:
-    """Return (allocated_gb, total_gb) for CUDA device 0."""
+    """Return total (reserved_gb, capacity_gb) across all CUDA devices."""
     if not torch.cuda.is_available():
         return 0.0, 0.0
-    allocated = torch.cuda.memory_allocated(0) / 1e9
-    total = torch.cuda.get_device_properties(0).total_memory / 1e9
-    return allocated, total
+    
+    num_devices = torch.cuda.device_count()
+    reserved = sum(torch.cuda.memory_reserved(i) for i in range(num_devices)) / 1e9
+    total = sum(torch.cuda.get_device_properties(i).total_memory for i in range(num_devices)) / 1e9
+    return reserved, total
 
 
 # ──────────────────────────────────────────────────────────────────────────────
