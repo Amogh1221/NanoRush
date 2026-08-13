@@ -343,7 +343,6 @@ class Trainer:
         if self.iter_num > 0 and self.iter_num % self.config.save_interval == 0:
             self.iter_num += 1
 
-        print(f"Resumed from iteration {self.iter_num}")
         if self.ema is not None and "ema" in ckpt:
             self.ema.load_state_dict(ckpt["ema"])
             self.ema.shadow = {
@@ -398,8 +397,6 @@ class Trainer:
         # ── Log config at training start ─────────────────────────────────
         if self.iter_num == 0:
             self.flog.log_config(config, self.n_params)
-        else:
-            self.flog.write(f"Resumed from iteration {self.iter_num}\n")
 
         torch.cuda.empty_cache()
         model.train()
