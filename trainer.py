@@ -333,7 +333,8 @@ class Trainer:
         # EMA + optimizer state would otherwise all be materialised on-device).
         # load_state_dict copies to the device incrementally.
         ckpt = torch.load(path, map_location="cpu", weights_only=False)
-        self.model.load_state_dict(ckpt["model_state_dict"])
+        base_model = self.model.module if hasattr(self.model, "module") else self.model
+        base_model.load_state_dict(ckpt["model_state_dict"])
         self.optimizer.load_state_dict(ckpt["optimizer_state_dict"])
         self.iter_num = ckpt["iter_num"]
         self.best_val_loss = ckpt.get("best_val_loss", float("inf"))
@@ -349,14 +350,15 @@ class Trainer:
         print(f"Resumed from iteration {self.iter_num}")
 
     def generate_samples(self):
-        self.model.eval()
+        base_model = self.model.module if hasattr(self.model, "module") else self.model
+        base_model.eval()
         if self.ema is not None:
             self.ema.apply_shadow()
 
         context = torch.zeros((1, 1), dtype=torch.long, device=self.device)
         for i in range(self.config.num_generations):
             temp = self.config.temperature * (1.0 + 0.1 * i)
-            out = self.model.generate(
+            out = base_model.generate(
                 context,
                 max_new_tokens=self.config.max_new_tokens_gen,
                 temperature=temp,
@@ -372,7 +374,7 @@ class Trainer:
 
         if self.ema is not None:
             self.ema.restore()
-        self.model.train()
+        base_model.train()
 
     def _get_tokens_per_step(self) -> int:
         """Tokens processed per optimizer step (across all gradient accumulation micro-steps)."""
