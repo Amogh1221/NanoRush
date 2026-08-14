@@ -309,6 +309,17 @@ class Trainer:
                     repo_type="dataset",
                     run_as_future=True
                 )
+                
+                # Push a historical copy to Hugging Face
+                if step_num is not None:
+                    api.upload_file(
+                        path_or_fileobj=path,
+                        path_in_repo=f"checkpoints/checkpoint-{step_num}.pt",
+                        repo_id=repo_id,
+                        repo_type="dataset",
+                        run_as_future=True
+                    )
+                    
                 # Push best checkpoint
                 if is_best and os.path.exists("checkpoints/best.pt"):
                     api.upload_file(
