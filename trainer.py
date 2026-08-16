@@ -19,6 +19,7 @@ import math
 import time
 import re
 import logging
+import threading
 from dataclasses import asdict
 from datetime import datetime
 
@@ -27,7 +28,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-from huggingface_hub import HfApi
+from huggingface_hub import HfApi, CommitOperationDelete
 from huggingface_hub.utils import disable_progress_bars
 
 from config import GPTConfig
@@ -314,7 +315,7 @@ class Trainer:
                 if step_num is not None:
                     api.upload_file(
                         path_or_fileobj=path,
-                        path_in_repo=f"checkpoints/checkpoint-{step_num}.pt",
+                        path_in_repo=f"checkpoints/checkpoint-{step_num:05d}.pt",
                         repo_id=repo_id,
                         repo_type="dataset",
                         run_as_future=True
@@ -338,6 +339,28 @@ class Trainer:
                         repo_type="dataset",
                         run_as_future=True
                     )
+                    
+                # Background cleanup of old checkpoints
+                if step_num is not None:
+                    def cleanup():
+                        try:
+                            files = api.list_repo_files(repo_id, repo_type="dataset")
+                            ckpt_files = [f for f in files if re.match(r"checkpoints/checkpoint-\d+\.pt", f)]
+                            ckpt_files.sort(key=lambda x: int(re.search(r"checkpoint-(\d+)\.pt", x).group(1)))
+                            if len(ckpt_files) > max_ckpt:
+                                to_delete = ckpt_files[:-max_ckpt]
+                                ops = [CommitOperationDelete(path_in_repo=f) for f in to_delete]
+                                api.create_commit(
+                                    repo_id=repo_id, 
+                                    repo_type="dataset", 
+                                    operations=ops, 
+                                    commit_message=f"Cleanup old checkpoints (keeping latest {max_ckpt})"
+                                )
+                        except Exception as e:
+                            print(f"\nHF cleanup failed: {e}")
+                            
+                    threading.Thread(target=cleanup, daemon=True).start()
+                    
             except Exception as e:
                 print(f"\nHuggingFace background sync failed: {e}")
 
