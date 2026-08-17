@@ -276,7 +276,7 @@ class Trainer:
         self.model.train()
         return out
 
-    def save_checkpoint(self, path, is_best=False, step_num=None, max_ckpt=15):
+    def save_checkpoint(self, path, is_best=False, step_num=None, max_ckpt=15, epoch_name=None):
         model_state = self.model.module.state_dict() if self.is_ddp else self.model.state_dict()
         ckpt = {
             "model_state_dict": model_state,
@@ -316,6 +316,16 @@ class Trainer:
                     api.upload_file(
                         path_or_fileobj=path,
                         path_in_repo=f"checkpoints/checkpoint-{step_num:05d}.pt",
+                        repo_id=repo_id,
+                        repo_type="dataset",
+                        run_as_future=True
+                    )
+                    
+                # Push epoch checkpoint
+                if epoch_name is not None:
+                    api.upload_file(
+                        path_or_fileobj=path,
+                        path_in_repo=f"checkpoints/{epoch_name}.pt",
                         repo_id=repo_id,
                         repo_type="dataset",
                         run_as_future=True
@@ -515,7 +525,7 @@ class Trainer:
 
                     vram_alloc, vram_total = _vram_gb()
                     steps_remaining = config.max_iters - self.iter_num
-                    sec_per_step = elapsed / max(self.iter_num, 1)
+                    sec_per_step = elapsed / max(self._steps_taken_since_resume, 1)
                     eta = steps_remaining * sec_per_step
                     eta_str = _format_eta(eta)
 
@@ -572,7 +582,7 @@ class Trainer:
                     # Compute metrics for display
                     elapsed = time.time() - start_time
                     now = time.time()
-                    sec_per_step = elapsed / max(self.iter_num, 1)
+                    sec_per_step = elapsed / max(self._steps_taken_since_resume, 1)
                     steps_remaining = config.max_iters - self.iter_num
                     eta = steps_remaining * sec_per_step
                     vram_alloc, vram_total = _vram_gb()
@@ -644,6 +654,14 @@ class Trainer:
 
                 if self.iter_num % config.save_interval == 0 and self.iter_num > 0 and self._steps_taken_since_resume > 0:
                     self.save_checkpoint("checkpoints/latest.pt", step_num=self.iter_num + 1)
+                    
+                # ── Epoch Checkpoints ────────────────────────────────────
+                current_epoch = int((self.iter_num * tokens_per_step) / max(self.train_len, 1))
+                next_epoch = int(((self.iter_num + 1) * tokens_per_step) / max(self.train_len, 1))
+                
+                if next_epoch > current_epoch and next_epoch in [1, 2]:
+                    epoch_name = f"epoch-{next_epoch}"
+                    self.save_checkpoint(f"checkpoints/{epoch_name}.pt", epoch_name=epoch_name)
 
                 self.iter_num += 1
                 self._steps_taken_since_resume += 1
