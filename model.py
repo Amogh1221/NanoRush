@@ -202,6 +202,10 @@ class GPT(nn.Module):
             probs = F.softmax(logits, dim=-1)
             idx_next = torch.multinomial(probs, num_samples=1)
             idx = torch.cat((idx, idx_next), dim=1)
+            
+            if idx.device.type == "xla":
+                import torch_xla.core.xla_model as xm
+                xm.mark_step()
 
         return idx
 
