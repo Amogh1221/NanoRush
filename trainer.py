@@ -593,6 +593,8 @@ class Trainer:
 
                 optimizer.zero_grad(set_to_none=True)
 
+                if torch.is_tensor(grad_norm):
+                    grad_norm = grad_norm.item()
                 self._grad_norm_sum += grad_norm
                 self._grad_norm_count += 1
 
