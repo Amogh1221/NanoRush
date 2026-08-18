@@ -72,7 +72,12 @@ def setup_environment(config: GPTConfig):
         print(f"AMP dtype: {config.dtype}")
     elif config.device == "xla":
         import torch_xla.core.xla_model as xm
-        if xm.get_ordinal() == 0:
+        try:
+            import torch_xla.runtime as xr
+            is_master = xr.global_ordinal() == 0
+        except (ImportError, AttributeError):
+            is_master = xm.get_ordinal() == 0
+        if is_master:
             print(f"TPU: {xm.xla_device()}")
             try:
                 import torch_xla.runtime as xr
@@ -90,7 +95,11 @@ def _train_worker(index=None, hf_token=None):
     # On TPU, only the master ordinal should print setup info
     is_master = True
     if USE_TPU:
-        is_master = xm.is_master_ordinal()
+        try:
+            import torch_xla.runtime as xr
+            is_master = xr.global_ordinal() == 0
+        except (ImportError, AttributeError):
+            is_master = xm.is_master_ordinal(local=False)
         # Set BF16 natively on TPU
         os.environ["XLA_USE_BF16"] = "1"
 

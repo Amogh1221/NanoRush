@@ -112,7 +112,11 @@ def _vram_gb() -> tuple[float, float]:
 def _is_master() -> bool:
     """Returns True if this process is the master (should do logging, saving, etc.)."""
     if USE_TPU:
-        return xm.is_master_ordinal()
+        try:
+            import torch_xla.runtime as xr
+            return xr.global_ordinal() == 0
+        except (ImportError, AttributeError):
+            return xm.is_master_ordinal(local=False)
     return True
 
 
