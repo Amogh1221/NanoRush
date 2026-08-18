@@ -593,24 +593,35 @@ class Trainer:
 
                 optimizer.zero_grad(set_to_none=True)
 
-                if torch.is_tensor(grad_norm):
-                    grad_norm = grad_norm.item()
-                self._grad_norm_sum += grad_norm
+                if self.use_tpu:
+                    # On TPU, do not accumulate to prevent memory leaks, just keep the latest
+                    self._grad_norm_sum = grad_norm
+                else:
+                    self._grad_norm_sum += grad_norm
                 self._grad_norm_count += 1
 
                 if self.ema is not None:
                     self.ema.update()
 
-                # Break the XLA graph history by materializing the loss once per step.
-                # This causes 1 sync per step (every 10 micro-steps), which is acceptable for speed,
-                # but completely prevents the 'running_loss' memory leak that OOMs the compiler.
-                step_loss = loss.item() * config.gradient_accumulation_steps
-                running_loss += step_loss
+                if self.use_tpu:
+                    # On TPU, do not accumulate running loss to avoid graph history memory leaks.
+                    # Just save the detached tensor from the last step.
+                    step_loss = loss.detach() * config.gradient_accumulation_steps
+                    running_loss = step_loss
+                else:
+                    step_loss = loss.item() * config.gradient_accumulation_steps
+                    running_loss += step_loss
                 self._tokens_processed += tokens_per_step
 
                 # ── Per-step terminal + file log (master only) ───────────
                 if self.iter_num % config.log_interval == 0 and self.iter_num > 0 and self.is_master:
-                    avg_loss = running_loss / config.log_interval
+                    if self.use_tpu:
+                        # Only materialize the loss once every log_interval (10 steps)
+                        # This causes 1 sync every 10 steps instead of 1 sync every step,
+                        # maximizing pipelining speed.
+                        avg_loss = running_loss.item()
+                    else:
+                        avg_loss = running_loss / config.log_interval
                     now = time.time()
                     elapsed = now - start_time
                     dt = now - self._last_log_time if self._last_log_time else 1.0
@@ -623,9 +634,10 @@ class Trainer:
                     eta = steps_remaining * sec_per_step
                     eta_str = _format_eta(eta)
 
-                    avg_gn = self._grad_norm_sum / max(self._grad_norm_count, 1)
-                    if torch.is_tensor(avg_gn):
-                        avg_gn = avg_gn.item()
+                    if self.use_tpu:
+                        avg_gn = self._grad_norm_sum.item() if torch.is_tensor(self._grad_norm_sum) else self._grad_norm_sum
+                    else:
+                        avg_gn = self._grad_norm_sum / max(self._grad_norm_count, 1)
 
                     # Terminal
                     print(
@@ -689,9 +701,10 @@ class Trainer:
                     steps_remaining = config.max_iters - self.iter_num
                     eta = steps_remaining * sec_per_step
                     vram_alloc, vram_total = _vram_gb()
-                    avg_gn = self._grad_norm_sum / max(self._grad_norm_count, 1)
-                    if torch.is_tensor(avg_gn):
-                        avg_gn = avg_gn.item()
+                    if self.use_tpu:
+                        avg_gn = self._grad_norm_sum.item() if torch.is_tensor(self._grad_norm_sum) else self._grad_norm_sum
+                    else:
+                        avg_gn = self._grad_norm_sum / max(self._grad_norm_count, 1)
                     tok_sec = tokens_per_step / max(sec_per_step, 1e-6)
 
                     is_best = val_loss < self.best_val_loss
