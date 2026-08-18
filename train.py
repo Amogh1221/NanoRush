@@ -72,7 +72,12 @@ def setup_environment(config: GPTConfig):
         print(f"AMP dtype: {config.dtype}")
     elif config.device == "xla":
         print(f"TPU: {xm.xla_device()}")
-        print(f"TPU cores: {xm.xrt_world_size()}")
+        try:
+            import torch_xla.runtime as xr
+            cores = xr.world_size()
+        except (ImportError, AttributeError):
+            cores = xm.xrt_world_size()
+        print(f"TPU cores: {cores}")
         print(f"Dtype: bfloat16 (native TPU)")
 
 
@@ -123,7 +128,12 @@ def _train_worker(index=None, hf_token=None):
         # GPU: batch_size * grad_accum = effective_batch (e.g. 2 * 40 = 80)
         # TPU: batch_size * num_cores * grad_accum = effective_batch
         # So new grad_accum = old_grad_accum / num_cores
-        num_cores = xm.xrt_world_size()
+        try:
+            import torch_xla.runtime as xr
+            num_cores = xr.world_size()
+        except (ImportError, AttributeError):
+            num_cores = xm.xrt_world_size()
+            
         original_effective_batch = config.batch_size * config.gradient_accumulation_steps
         new_grad_accum = max(1, config.gradient_accumulation_steps // num_cores)
         config.gradient_accumulation_steps = new_grad_accum

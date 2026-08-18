@@ -483,7 +483,11 @@ class Trainer:
             * self.config.gradient_accumulation_steps
         )
         if self.use_tpu:
-            tps *= xm.xrt_world_size()
+            try:
+                import torch_xla.runtime as xr
+                tps *= xr.world_size()
+            except (ImportError, AttributeError):
+                tps *= xm.xrt_world_size()
         return tps
 
     def train(self):
