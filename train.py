@@ -3,6 +3,11 @@ import sys
 import json
 import torch
 import argparse
+
+# Clear Kaggle environment variables that conflict with PJRT
+os.environ.pop('TPU_PROCESS_ADDRESSES', None)
+os.environ.pop('CLOUD_TPU_TASK_ID', None)
+
 from huggingface_hub import login, hf_hub_download
 
 # ── TPU Detection ────────────────────────────────────────────────────────────
