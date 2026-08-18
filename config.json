@@ -25,7 +25,7 @@
   "num_generations": 3,
   "device": "cuda",
   "dtype": "bfloat16",
-  "compile": true,
+  "compile": false,
   "fused_adam": true,
   "tf32": true,
   "dataset": "train.bin",
