@@ -576,7 +576,7 @@ class Trainer:
                     # IMPORTANT: avoid .item() here — it forces XLA sync
                     if config.grad_clip > 0.0:
                         xm.reduce_gradients(optimizer)
-                        torch.nn.utils.clip_grad_norm_(
+                        grad_norm = torch.nn.utils.clip_grad_norm_(
                             model.parameters(), config.grad_clip
                         )
                     xm.optimizer_step(optimizer)
@@ -633,6 +633,8 @@ class Trainer:
                     eta_str = _format_eta(eta)
 
                     avg_gn = self._grad_norm_sum / max(self._grad_norm_count, 1)
+                    if torch.is_tensor(avg_gn):
+                        avg_gn = avg_gn.item()
 
                     # Terminal
                     print(
@@ -697,6 +699,8 @@ class Trainer:
                     eta = steps_remaining * sec_per_step
                     vram_alloc, vram_total = _vram_gb()
                     avg_gn = self._grad_norm_sum / max(self._grad_norm_count, 1)
+                    if torch.is_tensor(avg_gn):
+                        avg_gn = avg_gn.item()
                     tok_sec = tokens_per_step / max(sec_per_step, 1e-6)
 
                     is_best = val_loss < self.best_val_loss
