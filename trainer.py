@@ -344,64 +344,63 @@ class Trainer:
         # Background HuggingFace sync
         hf_token = os.environ.get("HF_TOKEN")
         if hf_token:
-            msg = f"\n[HuggingFace] Pushing latest.pt{', best.pt,' if is_best else ''} and logs in the background..."
-            print(msg, flush=True)
-            try:
-                disable_progress_bars()
-                api = HfApi(token=hf_token)
-                repo_id = "Amogh1221/nanorush_training"
-                # Push latest checkpoint
-                api.upload_file(
-                    path_or_fileobj=path,
-                    path_in_repo="checkpoints/latest.pt",
-                    repo_id=repo_id,
-                    repo_type="dataset",
-                    run_as_future=True
-                )
-                
-                # Push a historical copy to Hugging Face
-                if step_num is not None:
-                    api.upload_file(
-                        path_or_fileobj=path,
-                        path_in_repo=f"checkpoints/checkpoint-{step_num:05d}.pt",
-                        repo_id=repo_id,
-                        repo_type="dataset",
-                        run_as_future=True
-                    )
-                    
-                # Push epoch checkpoint
-                if epoch_name is not None:
-                    api.upload_file(
-                        path_or_fileobj=path,
-                        path_in_repo=f"checkpoints/{epoch_name}.pt",
-                        repo_id=repo_id,
-                        repo_type="dataset",
-                        run_as_future=True
-                    )
-                    
-                # Push best checkpoint
-                if is_best and os.path.exists("checkpoints/best.pt"):
-                    api.upload_file(
-                        path_or_fileobj="checkpoints/best.pt",
-                        path_in_repo="checkpoints/best.pt",
-                        repo_id=repo_id,
-                        repo_type="dataset",
-                        run_as_future=True
-                    )
-                # Push logs
-                if os.path.exists("logs/training_log.txt"):
-                    api.upload_file(
-                        path_or_fileobj="logs/training_log.txt",
-                        path_in_repo="logs/training_log.txt",
-                        repo_id=repo_id,
-                        repo_type="dataset",
-                        run_as_future=True
-                    )
-                    
-                # Background cleanup of old checkpoints
-                if step_num is not None:
-                    def cleanup():
-                        try:
+            def background_sync():
+                try:
+                    import warnings
+                    from huggingface_hub.utils import disable_progress_bars
+                    disable_progress_bars()
+                    # Suppress HF warnings temporarily
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        api = HfApi(token=hf_token)
+                        repo_id = "Amogh1221/nanorush_training"
+                        
+                        # Push latest checkpoint
+                        api.upload_file(
+                            path_or_fileobj=path,
+                            path_in_repo="checkpoints/latest.pt",
+                            repo_id=repo_id,
+                            repo_type="dataset",
+                        )
+                        
+                        # Push a historical copy
+                        if step_num is not None:
+                            api.upload_file(
+                                path_or_fileobj=path,
+                                path_in_repo=f"checkpoints/checkpoint-{step_num:05d}.pt",
+                                repo_id=repo_id,
+                                repo_type="dataset",
+                            )
+                            
+                        # Push epoch checkpoint
+                        if epoch_name is not None:
+                            api.upload_file(
+                                path_or_fileobj=path,
+                                path_in_repo=f"checkpoints/{epoch_name}.pt",
+                                repo_id=repo_id,
+                                repo_type="dataset",
+                            )
+                            
+                        # Push best checkpoint
+                        if is_best and os.path.exists("checkpoints/best.pt"):
+                            api.upload_file(
+                                path_or_fileobj="checkpoints/best.pt",
+                                path_in_repo="checkpoints/best.pt",
+                                repo_id=repo_id,
+                                repo_type="dataset",
+                            )
+                            
+                        # Push logs
+                        if os.path.exists("logs/training_log.txt"):
+                            api.upload_file(
+                                path_or_fileobj="logs/training_log.txt",
+                                path_in_repo="logs/training_log.txt",
+                                repo_id=repo_id,
+                                repo_type="dataset",
+                            )
+                            
+                        # Cleanup old checkpoints
+                        if step_num is not None:
                             files = api.list_repo_files(repo_id, repo_type="dataset")
                             ckpt_files = [f for f in files if re.match(r"checkpoints/checkpoint-\d+\.pt", f)]
                             ckpt_files.sort(key=lambda x: int(re.search(r"checkpoint-(\d+)\.pt", x).group(1)))
@@ -414,13 +413,12 @@ class Trainer:
                                     operations=ops, 
                                     commit_message=f"Cleanup old checkpoints (keeping latest {max_ckpt})"
                                 )
-                        except Exception as e:
-                            print(f"\nHF cleanup failed: {e}")
-                            
-                    threading.Thread(target=cleanup, daemon=True).start()
-                    
-            except Exception as e:
-                print(f"\nHuggingFace background sync failed: {e}")
+                                
+                    print("\n======SAVED======\n", flush=True)
+                except Exception as e:
+                    print(f"\n[HF Sync Error] {e}\n", flush=True)
+
+            threading.Thread(target=background_sync, daemon=True).start()
 
     def load_checkpoint(self, path):
         # Load on CPU first to avoid a GPU memory spike (checkpoint + model +
