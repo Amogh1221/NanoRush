@@ -546,6 +546,9 @@ class Trainer:
                 )
                 loss = loss / config.gradient_accumulation_steps
                 loss.backward()
+                # Execute graph per-micro-step to prevent the XLA compiler from unrolling
+                # 10 massive forward/backward passes into a single OOM-causing graph
+                xm.mark_step()
             else:
                 with torch.amp.autocast(
                     "cuda",
