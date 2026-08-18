@@ -188,6 +188,9 @@ def _train_worker(index=None, hf_token=None):
         if is_ampere_plus:
             config.dtype = "bfloat16"
             config.tf32 = True
+            # Enable torch.compile for massive speedups on Linux (Lightning.AI)
+            if sys.platform != "win32":
+                config.compile = True
         # else: keep config.json defaults (float16, tf32=false)
 
         if is_master:
