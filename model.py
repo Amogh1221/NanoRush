@@ -138,7 +138,7 @@ class GPT(nn.Module):
             ckpt = self.config.gradient_checkpointing
             if self.training and ckpt > 0 and (i % ckpt == 0):
                 x, present = torch.utils.checkpoint.checkpoint(
-                    block, x, layer_past, use_reentrant=False
+                    block, x, layer_past, use_reentrant=True
                 )
             else:
                 x, present = block(x, layer_past)
