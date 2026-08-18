@@ -268,26 +268,37 @@ class EMA:
         self.register()
 
     def register(self):
+        seen_data_ptrs = set()
         for name, param in self.model.named_parameters():
             if param.requires_grad:
-                self.shadow[name] = param.data.clone()
+                ptr = param.data.data_ptr()
+                if ptr not in seen_data_ptrs:
+                    self.shadow[name] = param.data.clone()
+                    seen_data_ptrs.add(ptr)
 
     def update(self):
+        seen_data_ptrs = set()
         for name, param in self.model.named_parameters():
             if param.requires_grad:
+                ptr = param.data.data_ptr()
+                if ptr in seen_data_ptrs:
+                    continue  # Skip tied weights (already updated)
+                seen_data_ptrs.add(ptr)
+                if name not in self.shadow:
+                    continue  # Skip keys missing from old checkpoints
                 shadow = self.shadow[name]
                 shadow.mul_(self.decay)
                 shadow.add_(param.data, alpha=1.0 - self.decay)
 
     def apply_shadow(self):
         for name, param in self.model.named_parameters():
-            if param.requires_grad:
+            if param.requires_grad and name in self.shadow:
                 self.backup[name] = param.data.clone()
                 param.data.copy_(self.shadow[name])
 
     def restore(self):
         for name, param in self.model.named_parameters():
-            if param.requires_grad:
+            if param.requires_grad and name in self.backup:
                 param.data.copy_(self.backup[name])
         self.backup = {}
 
