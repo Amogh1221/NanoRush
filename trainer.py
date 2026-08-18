@@ -605,7 +605,10 @@ class Trainer:
                     scaler.step(optimizer)
                     scaler.update()
 
-                optimizer.zero_grad(set_to_none=True)
+                if self.use_tpu:
+                    optimizer.zero_grad(set_to_none=False)
+                else:
+                    optimizer.zero_grad(set_to_none=True)
 
                 if self.use_tpu:
                     # On TPU, do not accumulate to prevent memory leaks, just keep the latest
