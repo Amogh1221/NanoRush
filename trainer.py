@@ -248,7 +248,7 @@ class Trainer:
         self.optimizer = (self.model.module if self.is_ddp else self.model).configure_optimizers(config)
 
         self.ema = (
-            EMA(self.model, decay=config.ema_decay) if config.use_ema else None
+            EMA(self.model.module if self.is_ddp else self.model, decay=config.ema_decay) if config.use_ema else None
         )
 
         # GradScaler only needed for float16 on GPU

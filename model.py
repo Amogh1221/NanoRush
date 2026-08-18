@@ -291,5 +291,9 @@ class EMA:
         return {"shadow": self.shadow, "decay": self.decay}
 
     def load_state_dict(self, state_dict):
-        self.shadow = state_dict["shadow"]
         self.decay = state_dict["decay"]
+        self.shadow = {}
+        # Backwards compatibility: strip 'module.' prefix from Kaggle DDP checkpoints
+        for k, v in state_dict["shadow"].items():
+            new_k = k.replace("module.", "") if k.startswith("module.") else k
+            self.shadow[new_k] = v
