@@ -532,8 +532,15 @@ class Trainer:
 
         while self.iter_num < config.max_iters:
             lr = get_lr(self.iter_num, config)
-            for param_group in optimizer.param_groups:
-                param_group["lr"] = lr
+            if self.use_tpu:
+                # Wrap lr in an XLA tensor to prevent XLA from recompiling the 
+                # graph on every single step due to the dynamic scalar value changing.
+                lr_tensor = torch.tensor(lr, device=xm.xla_device())
+                for param_group in optimizer.param_groups:
+                    param_group["lr"] = lr_tensor
+            else:
+                for param_group in optimizer.param_groups:
+                    param_group["lr"] = lr
 
             x, y = self.get_batch("train")
 
