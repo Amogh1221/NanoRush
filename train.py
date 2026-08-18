@@ -140,6 +140,12 @@ def _train_worker(index=None, hf_token=None):
         # Halve batch_size to 1 and compensate with higher grad_accum.
         original_effective_batch = config.batch_size * config.gradient_accumulation_steps
         config.batch_size = 1
+        
+        # ── OOM Prevention: Force memmap on TPU ──
+        # xmp.spawn launches 8 processes. If preload=True, the 8GB dataset is
+        # loaded 8 times into CPU RAM (64GB total), instantly crashing Kaggle.
+        config.preload = False
+        
         try:
             import torch_xla.runtime as xr
             num_cores = xr.world_size()
@@ -152,6 +158,7 @@ def _train_worker(index=None, hf_token=None):
             print(f"TPU detected ({num_cores} cores)")
             print(f"batch_size: {config.batch_size}  grad_accum: {config.gradient_accumulation_steps}  "
                   f"(effective batch = {config.batch_size * num_cores * new_grad_accum})")
+            print(f"preload forced to False to prevent CPU OOM")
     elif torch.cuda.is_available():
         # ── Dynamic GPU VRAM auto-scaling ─────────────────────────────────
         vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
