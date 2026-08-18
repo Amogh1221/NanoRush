@@ -124,6 +124,7 @@ def _train_worker(index=None, hf_token=None):
         config.dtype = "bfloat16"
         config.compile = False
         config.fused_adam = False
+        config.gradient_checkpointing = 0  # Disable to avoid PyTorch 2.6+ XLA bug & speed up training
         # Adjust grad_accum to keep effective batch size identical:
         # GPU: batch_size * grad_accum = effective_batch (e.g. 2 * 40 = 80)
         # TPU: batch_size * num_cores * grad_accum = effective_batch
