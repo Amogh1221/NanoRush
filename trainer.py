@@ -563,12 +563,12 @@ class Trainer:
                 grad_norm = 0.0
                 if self.use_tpu:
                     # TPU: clip gradients directly (no scaler)
+                    # IMPORTANT: avoid .item() here — it forces XLA sync
                     if config.grad_clip > 0.0:
-                        # xm.reduce_gradients averages grads across TPU cores
                         xm.reduce_gradients(optimizer)
-                        grad_norm = torch.nn.utils.clip_grad_norm_(
+                        torch.nn.utils.clip_grad_norm_(
                             model.parameters(), config.grad_clip
-                        ).item()
+                        )
                     xm.optimizer_step(optimizer)
                 else:
                     if config.grad_clip > 0.0:
@@ -595,13 +595,21 @@ class Trainer:
                 if self.ema is not None:
                     self.ema.update()
 
-                step_loss = loss.item() * config.gradient_accumulation_steps
+                # On TPU, defer .item() to log intervals to avoid XLA sync
+                if self.use_tpu:
+                    step_loss = loss.detach()
+                else:
+                    step_loss = loss.item() * config.gradient_accumulation_steps
                 running_loss += step_loss
                 self._tokens_processed += tokens_per_step
 
                 # ── Per-step terminal + file log (master only) ───────────
                 if self.iter_num % config.log_interval == 0 and self.iter_num > 0 and self.is_master:
-                    avg_loss = running_loss / config.log_interval
+                    # On TPU, running_loss is accumulated as tensors — materialize here
+                    if self.use_tpu:
+                        avg_loss = (running_loss * config.gradient_accumulation_steps / config.log_interval).item()
+                    else:
+                        avg_loss = running_loss / config.log_interval
                     now = time.time()
                     elapsed = now - start_time
                     dt = now - self._last_log_time if self._last_log_time else 1.0
