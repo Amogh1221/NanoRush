@@ -1,8 +1,26 @@
 import re
 import sys
 import math
+import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
+
+# ── Publication Quality Styling ──────────────────────────────────────────
+plt.rcParams.update({
+    "font.size": 12,
+    "axes.titlesize": 14,
+    "axes.labelsize": 12,
+    "xtick.labelsize": 10,
+    "ytick.labelsize": 10,
+    "legend.fontsize": 10,
+    "figure.titlesize": 16,
+    "font.family": "serif",
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "grid.alpha": 0.4,
+    "grid.linestyle": "--",
+    "axes.grid": True,
+})
 
 LOG_PATH = "log.txt"
 OUTPUT_PATH = "training_plot.png"
@@ -63,7 +81,8 @@ def parse_log(path):
     return steps, evals
 
 def plot(steps, evals):
-    fig, axs = plt.subplots(4, 1, figsize=(14, 16), sharex=True)
+    # Standard academic page proportions (narrower than a wide monitor display)
+    fig, axs = plt.subplots(4, 1, figsize=(10, 14), sharex=True)
     ax1, ax2, ax3, ax4 = axs
 
     step_nums = [s[0] for s in steps]
@@ -72,7 +91,14 @@ def plot(steps, evals):
     step_gnorms = [s[3] for s in steps]
 
     # Panel 1: Loss
-    ax1.plot(step_nums, step_losses, alpha=0.4, linewidth=0.8, color="gray", label="Step-level Loss")
+    ax1.plot(step_nums, step_losses, alpha=0.3, linewidth=0.8, color="gray", label="Raw Step Loss")
+    
+    # Add a moving average trendline for precision
+    if len(step_losses) > 10:
+        window_size = max(5, len(step_losses) // 50)
+        smoothed = np.convolve(step_losses, np.ones(window_size)/window_size, mode='valid')
+        ax1.plot(step_nums[window_size-1:], smoothed, color="black", linewidth=1.5, label=f"Trend (n={window_size})")
+
     if evals:
         eval_nums = [e[0] for e in evals]
         train_losses = [e[1] for e in evals]
@@ -89,6 +115,13 @@ def plot(steps, evals):
     ax1.set_title("Training & Validation Loss")
     ax1.legend(loc="upper right", fontsize=9)
     ax1.grid(True, alpha=0.3)
+    
+    # Zoom in on the relevant loss values by ignoring the massive spikes in the first few steps
+    if step_losses:
+        sorted_losses = sorted(step_losses)
+        # Cap the top of the graph at the 95th percentile + 10% padding
+        y_max = sorted_losses[int(len(sorted_losses) * 0.95)] * 1.1
+        ax1.set_ylim(top=y_max)
 
     # Panel 2: Perplexity
     if evals and any(p is not None for p in ppls):
@@ -123,7 +156,8 @@ def plot(steps, evals):
         ax1.set_xlim(right=steps[-1][0])
 
     fig.tight_layout()
-    fig.savefig(OUTPUT_PATH, dpi=150)
+    # Save at 300 DPI (standard for publications) and crop white space
+    fig.savefig(OUTPUT_PATH, dpi=300, bbox_inches="tight")
     print(f"Plot saved to {OUTPUT_PATH}")
     plt.close(fig)
 

@@ -5,7 +5,17 @@ import torch
 import argparse
 from huggingface_hub import login, hf_hub_download
 
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128"
+# ── TPU Detection ────────────────────────────────────────────────────────────
+USE_TPU = False
+try:
+    import torch_xla.core.xla_model as xm
+    import torch_xla.distributed.xla_multiprocessing as xmp
+    USE_TPU = True
+except ImportError:
+    pass
+
+if not USE_TPU:
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128"
 
 from config import GPTConfig
 from tokenizer import Tokenizer
@@ -46,39 +56,79 @@ def sync_huggingface(repo_id: str):
 
 
 def setup_environment(config: GPTConfig):
-    if config.tf32 and config.device == "cuda":
-        torch.backends.cuda.matmul.allow_tf32 = True
-        torch.backends.cudnn.allow_tf32 = True
-
     if config.device == "cuda":
+        if config.tf32:
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
         torch.cuda.reset_peak_memory_stats()
         gpu_name = torch.cuda.get_device_name(0)
         vram = torch.cuda.get_device_properties(0).total_memory / 1e9
         print(f"GPU: {gpu_name} ({vram:.1f} GB)")
         print(f"AMP dtype: {config.dtype}")
+    elif config.device == "xla":
+        print(f"TPU: {xm.xla_device()}")
+        print(f"TPU cores: {xm.xrt_world_size()}")
+        print(f"Dtype: bfloat16 (native TPU)")
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--hf_token", type=str, required=True, help="HuggingFace WRITE Token")
-    args = parser.parse_args()
-    
-    print("Authenticating with HuggingFace...")
-    login(token=args.hf_token)
-    os.environ["HF_TOKEN"] = args.hf_token
-    
+def _train_worker(index=None, hf_token=None):
+    """
+    Core training function. Runs once on GPU, or is spawned per-core on TPU.
+    """
+    # On TPU, only the master ordinal should print setup info
+    is_master = True
+    if USE_TPU:
+        is_master = xm.is_master_ordinal()
+        # Set BF16 natively on TPU
+        os.environ["XLA_USE_BF16"] = "1"
+
+    if hf_token:
+        login(token=hf_token)
+        os.environ["HF_TOKEN"] = hf_token
+
     repo_id = "Amogh1221/nanorush_training"
-    sync_huggingface(repo_id)
+
+    # Only master downloads data (avoid 8 concurrent downloads)
+    if is_master:
+        sync_huggingface(repo_id)
+    
+    # On TPU, wait for master to finish downloading
+    if USE_TPU:
+        xm.rendezvous("data_download")
 
     config_path = "config.json"
     if os.path.exists(config_path):
-        print(f"Loading config from {config_path}")
+        if is_master:
+            print(f"Loading config from {config_path}")
         with open(config_path) as f:
             config = GPTConfig(**json.load(f))
     else:
         config = GPTConfig()
         config.save("config.json")
-        print(f"Created default config at {config_path}")
+        if is_master:
+            print(f"Created default config at {config_path}")
+
+    # ── Auto-detect device and adjust config ─────────────────────────────
+    if USE_TPU:
+        config.device = "xla"
+        config.dtype = "bfloat16"
+        config.compile = False
+        config.fused_adam = False
+        # Adjust grad_accum to keep effective batch size identical:
+        # GPU: batch_size * grad_accum = effective_batch (e.g. 2 * 40 = 80)
+        # TPU: batch_size * num_cores * grad_accum = effective_batch
+        # So new grad_accum = old_grad_accum / num_cores
+        num_cores = xm.xrt_world_size()
+        original_effective_batch = config.batch_size * config.gradient_accumulation_steps
+        new_grad_accum = max(1, config.gradient_accumulation_steps // num_cores)
+        config.gradient_accumulation_steps = new_grad_accum
+        if is_master:
+            print(f"TPU detected ({num_cores} cores)")
+            print(f"Adjusted grad_accum: {config.gradient_accumulation_steps} "
+                  f"(effective batch = {config.batch_size * num_cores * new_grad_accum})")
+    elif not torch.cuda.is_available():
+        config.device = "cpu"
+        print("WARNING: No GPU or TPU found, falling back to CPU")
 
     setup_environment(config)
 
@@ -94,10 +144,30 @@ def main():
     try:
         trainer.train()
     except KeyboardInterrupt:
-        print("\nInterrupted, saving checkpoint...")
-        trainer.save_checkpoint("checkpoints/latest.pt", step_num=trainer.iter_num)
-        print("Checkpoint saved. Exiting.")
+        if is_master:
+            print("\nInterrupted, saving checkpoint...")
+            trainer.save_checkpoint("checkpoints/latest.pt", step_num=trainer.iter_num)
+            print("Checkpoint saved. Exiting.")
         sys.exit(0)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--hf_token", type=str, required=True, help="HuggingFace WRITE Token")
+    args = parser.parse_args()
+
+    if USE_TPU:
+        print("=" * 56)
+        print("  nanorush — TPU v5e-8 Training Mode")
+        print("=" * 56)
+        # xmp.spawn launches _train_worker on each of the 8 TPU cores
+        xmp.spawn(_train_worker, args=(args.hf_token,), nprocs=8, start_method="fork")
+    else:
+        print("=" * 56)
+        print("  nanorush — GPU Training Mode")
+        print("=" * 56)
+        print(f"Authenticating with HuggingFace...")
+        _train_worker(index=None, hf_token=args.hf_token)
 
 
 if __name__ == "__main__":

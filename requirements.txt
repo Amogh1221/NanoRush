@@ -9,3 +9,5 @@ tensorboard>=2.12
 datasets>=2.14
 requests>=2.31
 matplotlib
+# TPU support (pre-installed on Kaggle TPU environments, skip on GPU)
+# torch_xla

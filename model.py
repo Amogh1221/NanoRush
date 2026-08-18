@@ -242,6 +242,9 @@ class GPT(nn.Module):
 
         fused_available = "fused" in torch.__dict__
         use_fused = fused_available and config.fused_adam and config.device == "cuda"
+        # Fused AdamW requires CUDA — disable on TPU/CPU
+        if config.device != "cuda":
+            use_fused = False
 
         optimizer = torch.optim.AdamW(
             optim_groups,

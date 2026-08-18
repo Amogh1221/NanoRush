@@ -1,8 +1,9 @@
 """
-trainer.py  —  nano_brain training loop
-========================================
+trainer.py  —  nano_brain training loop (TPU + GPU dual-compatible)
+===================================================================
 Full-featured trainer with:
-  - Mixed-precision (AMP) training with bfloat16/float16
+  - Dual TPU (torch_xla) and GPU (CUDA) support
+  - Mixed-precision: native bfloat16 on TPU, AMP on GPU
   - Gradient accumulation for large effective batch sizes
   - Gradient clipping with norm tracking
   - EMA (exponential moving average) of model weights
@@ -34,6 +35,14 @@ from huggingface_hub.utils import disable_progress_bars
 from config import GPTConfig
 from model import GPT, EMA
 from dataset import load_bin_tensors
+
+# ── TPU Detection ────────────────────────────────────────────────────────────
+USE_TPU = False
+try:
+    import torch_xla.core.xla_model as xm
+    USE_TPU = True
+except ImportError:
+    pass
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Dtype mapping
@@ -98,6 +107,13 @@ def _vram_gb() -> tuple[float, float]:
     reserved = sum(torch.cuda.memory_reserved(i) for i in range(num_devices)) / 1e9
     total = sum(torch.cuda.get_device_properties(i).total_memory for i in range(num_devices)) / 1e9
     return reserved, total
+
+
+def _is_master() -> bool:
+    """Returns True if this process is the master (should do logging, saving, etc.)."""
+    if USE_TPU:
+        return xm.is_master_ordinal()
+    return True
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -190,26 +206,42 @@ class Trainer:
     def __init__(self, config: GPTConfig, tokenizer):
         self.config = config
         self.tokenizer = tokenizer
-        self.device = torch.device(config.device)
+        self.use_tpu = (config.device == "xla")
+        self.is_master = _is_master()
+
+        # Set device
+        if self.use_tpu:
+            self.device = xm.xla_device()
+        else:
+            self.device = torch.device(config.device)
 
         os.makedirs("checkpoints", exist_ok=True)
         os.makedirs("samples", exist_ok=True)
         os.makedirs("runs", exist_ok=True)
 
-        self.writer = SummaryWriter(log_dir="runs")
-        self.flog = FileLogger("logs")
+        # Only master writes logs and tensorboard
+        if self.is_master:
+            self.writer = SummaryWriter(log_dir="runs")
+            self.flog = FileLogger("logs")
+        else:
+            self.writer = None
+            self.flog = None
 
         self.model = GPT(config).to(self.device)
         self.n_params = sum(p.numel() for p in self.model.parameters())
-        print(f"Model parameters: {self.n_params:,}")
+        if self.is_master:
+            print(f"Model parameters: {self.n_params:,}")
 
         if config.compile and hasattr(torch, "compile"):
-            print("Compiling model...")
+            if self.is_master:
+                print("Compiling model...")
             self.model = torch.compile(self.model, mode="default")
 
+        # Multi-device wrapping
         self.is_ddp = False
-        if torch.cuda.device_count() > 1:
-            print(f"Detected {torch.cuda.device_count()} GPUs. Wrapping with DataParallel.")
+        if not self.use_tpu and torch.cuda.device_count() > 1:
+            if self.is_master:
+                print(f"Detected {torch.cuda.device_count()} GPUs. Wrapping with DataParallel.")
             self.model = torch.nn.DataParallel(self.model)
             self.is_ddp = True
 
@@ -219,17 +251,20 @@ class Trainer:
             EMA(self.model, decay=config.ema_decay) if config.use_ema else None
         )
 
+        # GradScaler only needed for float16 on GPU
+        self.use_scaler = (not self.use_tpu and config.dtype == "float16")
         self.scaler = torch.amp.GradScaler(
-            "cuda", enabled=(config.dtype == "float16")
-        )
+            "cuda", enabled=self.use_scaler
+        ) if not self.use_tpu else None
 
         self.train_data, self.val_data = load_bin_tensors(
             config.data_dir, config.dataset, preload=config.preload
         )
         self.train_len = len(self.train_data) - config.block_size
         self.val_len = len(self.val_data) - config.block_size
-        print(f"Train windows: {self.train_len:,}")
-        print(f"Val windows:   {self.val_len:,}")
+        if self.is_master:
+            print(f"Train windows: {self.train_len:,}")
+            print(f"Val windows:   {self.val_len:,}")
         self._train_data_t = None
         self._val_data_t = None
 
@@ -261,22 +296,29 @@ class Trainer:
             losses = torch.zeros(self.config.eval_iters, device=self.device)
             for k in range(self.config.eval_iters):
                 x, y = self.get_batch(split)
-                with torch.amp.autocast(
-                    "cuda",
-                    dtype=_DTYPE_MAP.get(self.config.dtype, torch.float16),
-                    enabled=self.config.dtype != "float32",
-                ):
+                if self.use_tpu:
+                    # On TPU, bfloat16 is handled natively via XLA_USE_BF16
                     logits, _ = self.model(x)
-                    loss = F.cross_entropy(
-                        logits.view(-1, logits.size(-1)),
-                        y.view(-1),
-                    )
+                else:
+                    with torch.amp.autocast(
+                        "cuda",
+                        dtype=_DTYPE_MAP.get(self.config.dtype, torch.float16),
+                        enabled=self.config.dtype != "float32",
+                    ):
+                        logits, _ = self.model(x)
+                loss = F.cross_entropy(
+                    logits.view(-1, logits.size(-1)),
+                    y.view(-1),
+                )
                 losses[k] = loss
             out[split] = losses.mean().item()
         self.model.train()
         return out
 
     def save_checkpoint(self, path, is_best=False, step_num=None, max_ckpt=15, epoch_name=None):
+        if not self.is_master:
+            return
+
         model_state = self.model.module.state_dict() if self.is_ddp else self.model.state_dict()
         ckpt = {
             "model_state_dict": model_state,
@@ -287,11 +329,17 @@ class Trainer:
         }
         if self.ema is not None:
             ckpt["ema"] = self.ema.state_dict()
-        if self.config.dtype == "float16":
+        if self.use_scaler and self.scaler is not None:
             ckpt["scaler"] = self.scaler.state_dict()
-        torch.save(ckpt, path)
-        if is_best:
-            torch.save(ckpt, "checkpoints/best.pt")
+
+        if self.use_tpu:
+            xm.save(ckpt, path)
+            if is_best:
+                xm.save(ckpt, "checkpoints/best.pt")
+        else:
+            torch.save(ckpt, path)
+            if is_best:
+                torch.save(ckpt, "checkpoints/best.pt")
 
         # Background HuggingFace sync
         hf_token = os.environ.get("HF_TOKEN")
@@ -394,12 +442,15 @@ class Trainer:
             self.ema.shadow = {
                 k: v.to(self.device) for k, v in self.ema.shadow.items()
             }
-        if self.config.dtype == "float16" and "scaler" in ckpt:
+        if self.use_scaler and self.scaler is not None and "scaler" in ckpt:
             self.scaler.load_state_dict(ckpt["scaler"])
         del ckpt
-        torch.cuda.empty_cache()
+        if not self.use_tpu and torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     def generate_samples(self):
+        if not self.is_master:
+            return
         base_model = self.model.module if hasattr(self.model, "module") else self.model
         base_model.eval()
         if self.ema is not None:
@@ -427,12 +478,15 @@ class Trainer:
         base_model.train()
 
     def _get_tokens_per_step(self) -> int:
-        """Tokens processed per optimizer step (across all gradient accumulation micro-steps)."""
-        return (
+        """Tokens processed per optimizer step (across all gradient accumulation micro-steps and all devices)."""
+        tps = (
             self.config.batch_size
             * self.config.block_size
             * self.config.gradient_accumulation_steps
         )
+        if self.use_tpu:
+            tps *= xm.xrt_world_size()
+        return tps
 
     def train(self):
         config = self.config
@@ -441,10 +495,11 @@ class Trainer:
         scaler = self.scaler
 
         # ── Log config at training start ─────────────────────────────────
-        if self.iter_num == 0:
+        if self.iter_num == 0 and self.is_master and self.flog:
             self.flog.log_config(config, self.n_params)
 
-        torch.cuda.empty_cache()
+        if not self.use_tpu and torch.cuda.is_available():
+            torch.cuda.empty_cache()
         model.train()
         running_loss = 0.0
         start_time = time.time()
@@ -454,12 +509,15 @@ class Trainer:
 
         tokens_per_step = self._get_tokens_per_step()
 
-        pbar = tqdm(
-            total=config.max_iters,
-            initial=self.iter_num,
-            desc="Training",
-            dynamic_ncols=True,
-        )
+        if self.is_master:
+            pbar = tqdm(
+                total=config.max_iters,
+                initial=self.iter_num,
+                desc="Training",
+                dynamic_ncols=True,
+            )
+        else:
+            pbar = None
 
         while self.iter_num < config.max_iters:
             lr = get_lr(self.iter_num, config)
@@ -468,44 +526,64 @@ class Trainer:
 
             x, y = self.get_batch("train")
 
-            with torch.amp.autocast(
-                "cuda",
-                dtype=_DTYPE_MAP.get(config.dtype, torch.float16),
-                enabled=config.dtype != "float32",
-            ):
+            if self.use_tpu:
+                # On TPU, bfloat16 is handled natively via XLA_USE_BF16
                 logits, _ = model(x)
                 loss = F.cross_entropy(
                     logits.view(-1, logits.size(-1)),
                     y.view(-1),
                 )
                 loss = loss / config.gradient_accumulation_steps
-
-            scaler.scale(loss).backward()
+                loss.backward()
+            else:
+                with torch.amp.autocast(
+                    "cuda",
+                    dtype=_DTYPE_MAP.get(config.dtype, torch.float16),
+                    enabled=config.dtype != "float32",
+                ):
+                    logits, _ = model(x)
+                    loss = F.cross_entropy(
+                        logits.view(-1, logits.size(-1)),
+                        y.view(-1),
+                    )
+                    loss = loss / config.gradient_accumulation_steps
+                scaler.scale(loss).backward()
 
             self.micro_step += 1
 
             if self.micro_step % config.gradient_accumulation_steps == 0:
                 # ── Gradient clipping + norm tracking ────────────────────
                 grad_norm = 0.0
-                if config.grad_clip > 0.0:
-                    scaler.unscale_(optimizer)
-                    grad_norm = torch.nn.utils.clip_grad_norm_(
-                        model.parameters(), config.grad_clip
-                    ).item()
+                if self.use_tpu:
+                    # TPU: clip gradients directly (no scaler)
+                    if config.grad_clip > 0.0:
+                        # xm.reduce_gradients averages grads across TPU cores
+                        xm.reduce_gradients(optimizer)
+                        grad_norm = torch.nn.utils.clip_grad_norm_(
+                            model.parameters(), config.grad_clip
+                        ).item()
+                    xm.optimizer_step(optimizer)
                 else:
-                    # Still compute norm for logging even without clipping
-                    total_norm_sq = 0.0
-                    for p in model.parameters():
-                        if p.grad is not None:
-                            total_norm_sq += p.grad.data.float().norm().item() ** 2
-                    grad_norm = total_norm_sq ** 0.5
+                    if config.grad_clip > 0.0:
+                        scaler.unscale_(optimizer)
+                        grad_norm = torch.nn.utils.clip_grad_norm_(
+                            model.parameters(), config.grad_clip
+                        ).item()
+                    else:
+                        # Still compute norm for logging even without clipping
+                        total_norm_sq = 0.0
+                        for p in model.parameters():
+                            if p.grad is not None:
+                                total_norm_sq += p.grad.data.float().norm().item() ** 2
+                        grad_norm = total_norm_sq ** 0.5
+
+                    scaler.step(optimizer)
+                    scaler.update()
+
+                optimizer.zero_grad(set_to_none=True)
 
                 self._grad_norm_sum += grad_norm
                 self._grad_norm_count += 1
-
-                scaler.step(optimizer)
-                scaler.update()
-                optimizer.zero_grad(set_to_none=True)
 
                 if self.ema is not None:
                     self.ema.update()
@@ -514,8 +592,8 @@ class Trainer:
                 running_loss += step_loss
                 self._tokens_processed += tokens_per_step
 
-                # ── Per-step terminal + file log ─────────────────────────
-                if self.iter_num % config.log_interval == 0 and self.iter_num > 0:
+                # ── Per-step terminal + file log (master only) ───────────
+                if self.iter_num % config.log_interval == 0 and self.iter_num > 0 and self.is_master:
                     avg_loss = running_loss / config.log_interval
                     now = time.time()
                     elapsed = now - start_time
@@ -542,16 +620,18 @@ class Trainer:
                     )
 
                     # TensorBoard
-                    self.writer.add_scalar("train/loss", avg_loss, self.iter_num)
-                    self.writer.add_scalar("train/lr", lr, self.iter_num)
-                    self.writer.add_scalar("train/grad_norm", avg_gn, self.iter_num)
-                    self.writer.add_scalar("train/tokens_per_sec", tok_sec, self.iter_num)
+                    if self.writer:
+                        self.writer.add_scalar("train/loss", avg_loss, self.iter_num)
+                        self.writer.add_scalar("train/lr", lr, self.iter_num)
+                        self.writer.add_scalar("train/grad_norm", avg_gn, self.iter_num)
+                        self.writer.add_scalar("train/tokens_per_sec", tok_sec, self.iter_num)
 
                     # File log (one-line)
-                    self.flog.log_step(
-                        self.iter_num, config.max_iters, avg_loss, lr,
-                        avg_gn, tok_sec, vram_alloc, eta_str,
-                    )
+                    if self.flog:
+                        self.flog.log_step(
+                            self.iter_num, config.max_iters, avg_loss, lr,
+                            avg_gn, tok_sec, vram_alloc, eta_str,
+                        )
 
                     running_loss = 0.0
                     self._grad_norm_sum = 0.0
@@ -564,9 +644,10 @@ class Trainer:
                     train_loss = losses["train"]
                     ppl = math.exp(min(val_loss, 20.0))  # cap to prevent overflow
 
-                    self.writer.add_scalar("eval/train_loss", train_loss, self.iter_num)
-                    self.writer.add_scalar("eval/val_loss", val_loss, self.iter_num)
-                    self.writer.add_scalar("eval/perplexity", ppl, self.iter_num)
+                    if self.is_master and self.writer:
+                        self.writer.add_scalar("eval/train_loss", train_loss, self.iter_num)
+                        self.writer.add_scalar("eval/val_loss", val_loss, self.iter_num)
+                        self.writer.add_scalar("eval/perplexity", ppl, self.iter_num)
 
                     # EMA evaluation
                     ema_val = None
@@ -574,9 +655,10 @@ class Trainer:
                         self.ema.apply_shadow()
                         ema_losses = self.estimate_loss()
                         ema_val = ema_losses["val"]
-                        self.writer.add_scalar(
-                            "eval/ema_val_loss", ema_val, self.iter_num
-                        )
+                        if self.is_master and self.writer:
+                            self.writer.add_scalar(
+                                "eval/ema_val_loss", ema_val, self.iter_num
+                            )
                         self.ema.restore()
 
                     # Compute metrics for display
@@ -591,63 +673,67 @@ class Trainer:
 
                     is_best = val_loss < self.best_val_loss
 
-                    # Terminal — structured eval block
-                    hr = "═" * 56
-                    pct = self.iter_num / config.max_iters * 100
-                    delta_val = val_loss - self.best_val_loss if self.best_val_loss < float("inf") else 0.0
-                    delta_str = f"Δ: {delta_val:+.4f}" if not is_best else "NEW BEST ★"
+                    if self.is_master:
+                        # Terminal — structured eval block
+                        hr = "═" * 56
+                        pct = self.iter_num / config.max_iters * 100
+                        delta_val = val_loss - self.best_val_loss if self.best_val_loss < float("inf") else 0.0
+                        delta_str = f"Δ: {delta_val:+.4f}" if not is_best else "NEW BEST ★"
 
-                    print(f"\n{hr}")
-                    print(f"  EVALUATION @ Step {self.iter_num} / {config.max_iters}   ({pct:.1f}%)")
-                    print(hr)
-                    print(f"  Train Loss     : {train_loss:.4f}")
-                    print(f"  Val Loss       : {val_loss:.4f}  (best: {self.best_val_loss:.4f}  {delta_str})")
-                    print(f"  Perplexity     : {ppl:.2f}")
-                    if ema_val is not None:
-                        print(f"  EMA Val Loss   : {ema_val:.4f}")
-                    print(f"  Learning Rate  : {lr:.2e}")
-                    print(f"  Avg Grad Norm  : {avg_gn:.3f}")
-                    print(f"  Tokens/sec     : {tok_sec:,.0f}")
-                    print(f"  VRAM           : {vram_alloc:.1f} / {vram_total:.1f} GB")
-                    print(f"  Elapsed        : {_format_elapsed(elapsed)}")
-                    print(f"  ETA            : {_format_eta(eta)}")
-                    print(hr)
+                        print(f"\n{hr}")
+                        print(f"  EVALUATION @ Step {self.iter_num} / {config.max_iters}   ({pct:.1f}%)")
+                        print(hr)
+                        print(f"  Train Loss     : {train_loss:.4f}")
+                        print(f"  Val Loss       : {val_loss:.4f}  (best: {self.best_val_loss:.4f}  {delta_str})")
+                        print(f"  Perplexity     : {ppl:.2f}")
+                        if ema_val is not None:
+                            print(f"  EMA Val Loss   : {ema_val:.4f}")
+                        print(f"  Learning Rate  : {lr:.2e}")
+                        print(f"  Avg Grad Norm  : {avg_gn:.3f}")
+                        print(f"  Tokens/sec     : {tok_sec:,.0f}")
+                        print(f"  VRAM           : {vram_alloc:.1f} / {vram_total:.1f} GB")
+                        print(f"  Elapsed        : {_format_elapsed(elapsed)}")
+                        print(f"  ETA            : {_format_eta(eta)}")
+                        print(hr)
 
-                    # File log — structured eval block
-                    self.flog.log_eval(
-                        step=self.iter_num,
-                        total=config.max_iters,
-                        train_loss=train_loss,
-                        val_loss=val_loss,
-                        best_val=self.best_val_loss,
-                        ppl=ppl,
-                        ema_val=ema_val,
-                        lr=lr,
-                        avg_grad_norm=avg_gn,
-                        tok_sec=tok_sec,
-                        vram_alloc=vram_alloc,
-                        vram_total=vram_total,
-                        elapsed_str=_format_elapsed(elapsed),
-                        eta_str=_format_eta(eta),
-                    )
+                        # File log — structured eval block
+                        if self.flog:
+                            self.flog.log_eval(
+                                step=self.iter_num,
+                                total=config.max_iters,
+                                train_loss=train_loss,
+                                val_loss=val_loss,
+                                best_val=self.best_val_loss,
+                                ppl=ppl,
+                                ema_val=ema_val,
+                                lr=lr,
+                                avg_grad_norm=avg_gn,
+                                tok_sec=tok_sec,
+                                vram_alloc=vram_alloc,
+                                vram_total=vram_total,
+                                elapsed_str=_format_elapsed(elapsed),
+                                eta_str=_format_eta(eta),
+                            )
 
-                    # Update tqdm postfix
-                    pbar.set_postfix({
-                        "train": f"{train_loss:.4f}",
-                        "val": f"{val_loss:.4f}",
-                        "ppl": f"{ppl:.1f}",
-                        "lr": f"{lr:.2e}",
-                    })
+                        # Update tqdm postfix
+                        if pbar:
+                            pbar.set_postfix({
+                                "train": f"{train_loss:.4f}",
+                                "val": f"{val_loss:.4f}",
+                                "ppl": f"{ppl:.1f}",
+                                "lr": f"{lr:.2e}",
+                            })
 
-                    # Save checkpoint
+                    # Save checkpoint (master only — handled inside save_checkpoint)
                     if is_best:
                         self.best_val_loss = val_loss
                         self.save_checkpoint("checkpoints/latest.pt", is_best=True, step_num=self.iter_num + 1)
                     else:
                         self.save_checkpoint("checkpoints/latest.pt", step_num=self.iter_num + 1)
 
-                    # Defrag the CUDA caching allocator after eval's memory spike
-                    torch.cuda.empty_cache()
+                    # Defrag memory after eval's memory spike
+                    if not self.use_tpu and torch.cuda.is_available():
+                        torch.cuda.empty_cache()
 
                 if self.iter_num % config.gen_interval == 0 and self.iter_num > 0:
                     self.generate_samples()
@@ -665,14 +751,19 @@ class Trainer:
 
                 self.iter_num += 1
                 self._steps_taken_since_resume += 1
-                pbar.update(1)
+                if pbar:
+                    pbar.update(1)
 
-        pbar.close()
+        if pbar:
+            pbar.close()
         self.save_checkpoint("checkpoints/latest.pt", step_num=self.iter_num)
         elapsed = time.time() - start_time
-        print(f"\nTraining completed in {elapsed / 3600:.2f} hours")
-        print(f"Best val loss: {self.best_val_loss:.4f}  (perplexity: {math.exp(self.best_val_loss):.2f})")
+        if self.is_master:
+            print(f"\nTraining completed in {elapsed / 3600:.2f} hours")
+            print(f"Best val loss: {self.best_val_loss:.4f}  (perplexity: {math.exp(self.best_val_loss):.2f})")
 
-        self.flog.log_end(self.iter_num, elapsed, self.best_val_loss)
-        self.flog.close()
-        self.writer.close()
+            if self.flog:
+                self.flog.log_end(self.iter_num, elapsed, self.best_val_loss)
+                self.flog.close()
+            if self.writer:
+                self.writer.close()
