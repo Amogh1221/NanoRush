@@ -512,10 +512,7 @@ class Trainer:
             torch.cuda.empty_cache()
         model.train()
         # On TPU, use a device tensor to avoid float+tensor graph shape changes
-        if self.use_tpu:
-            running_loss = torch.tensor(0.0, device=self.device)
-        else:
-            running_loss = 0.0
+        running_loss = 0.0
         start_time = time.time()
         self._last_log_time = start_time
         self._tokens_processed = 0
@@ -549,9 +546,6 @@ class Trainer:
                 )
                 loss = loss / config.gradient_accumulation_steps
                 loss.backward()
-                # Execute graph per-micro-step to prevent the XLA compiler from unrolling
-                # 10 massive forward/backward passes into a single OOM-causing graph
-                xm.mark_step()
             else:
                 with torch.amp.autocast(
                     "cuda",
@@ -605,21 +599,16 @@ class Trainer:
                 if self.ema is not None:
                     self.ema.update()
 
-                # On TPU, defer .item() to log intervals to avoid XLA sync
-                if self.use_tpu:
-                    step_loss = loss.detach()
-                else:
-                    step_loss = loss.item() * config.gradient_accumulation_steps
+                # Break the XLA graph history by materializing the loss once per step.
+                # This causes 1 sync per step (every 10 micro-steps), which is acceptable for speed,
+                # but completely prevents the 'running_loss' memory leak that OOMs the compiler.
+                step_loss = loss.item() * config.gradient_accumulation_steps
                 running_loss += step_loss
                 self._tokens_processed += tokens_per_step
 
                 # ── Per-step terminal + file log (master only) ───────────
                 if self.iter_num % config.log_interval == 0 and self.iter_num > 0 and self.is_master:
-                    # On TPU, running_loss is accumulated as tensors — materialize here
-                    if self.use_tpu:
-                        avg_loss = (running_loss * config.gradient_accumulation_steps / config.log_interval).item()
-                    else:
-                        avg_loss = running_loss / config.log_interval
+                    avg_loss = running_loss / config.log_interval
                     now = time.time()
                     elapsed = now - start_time
                     dt = now - self._last_log_time if self._last_log_time else 1.0
@@ -661,7 +650,7 @@ class Trainer:
                         )
 
                     if self.use_tpu:
-                        running_loss = torch.tensor(0.0, device=self.device)
+                        running_loss = 0.0
                     else:
                         running_loss = 0.0
                     self._grad_norm_sum = 0.0
