@@ -562,6 +562,13 @@ class Trainer:
 
             self.micro_step += 1
 
+            # ── Prevent CPU RAM OOM during compilation ──────────────────
+            # Unrolling 10 micro-steps into a single XLA graph consumes >30GB of CPU RAM
+            # during compilation on Kaggle, triggering the OOM killer. We slice the graph
+            # into chunks of 5 micro-steps max by marking steps periodically.
+            if self.use_tpu and self.micro_step % 5 == 0 and self.micro_step % config.gradient_accumulation_steps != 0:
+                xm.mark_step()
+
             if self.micro_step % config.gradient_accumulation_steps == 0:
                 # ── Gradient clipping + norm tracking ────────────────────
                 grad_norm = 0.0
