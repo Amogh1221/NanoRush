@@ -136,22 +136,21 @@ def _train_worker(index=None, hf_token=None):
         config.dtype = "bfloat16"
         config.compile = False
         config.fused_adam = False
-        # Adjust grad_accum to keep effective batch size identical:
-        # GPU: batch_size * grad_accum = effective_batch (e.g. 2 * 40 = 80)
-        # TPU: batch_size * num_cores * grad_accum = effective_batch
-        # So new grad_accum = old_grad_accum / num_cores
+        # TPU v3 has 15.75G HBM per core — batch_size=2 overflows by ~362MB.
+        # Halve batch_size to 1 and compensate with higher grad_accum.
+        original_effective_batch = config.batch_size * config.gradient_accumulation_steps
+        config.batch_size = 1
         try:
             import torch_xla.runtime as xr
             num_cores = xr.world_size()
         except (ImportError, AttributeError):
             num_cores = xm.xrt_world_size()
-            
-        original_effective_batch = config.batch_size * config.gradient_accumulation_steps
-        new_grad_accum = max(1, config.gradient_accumulation_steps // num_cores)
+        # Recalculate grad_accum: effective = batch_size * num_cores * grad_accum
+        new_grad_accum = max(1, original_effective_batch // (config.batch_size * num_cores))
         config.gradient_accumulation_steps = new_grad_accum
         if is_master:
             print(f"TPU detected ({num_cores} cores)")
-            print(f"Adjusted grad_accum: {config.gradient_accumulation_steps} "
+            print(f"batch_size: {config.batch_size}  grad_accum: {config.gradient_accumulation_steps}  "
                   f"(effective batch = {config.batch_size * num_cores * new_grad_accum})")
     elif torch.cuda.is_available():
         # ── Dynamic GPU VRAM auto-scaling ─────────────────────────────────
