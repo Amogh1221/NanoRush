@@ -508,7 +508,11 @@ class Trainer:
         if not self.use_tpu and torch.cuda.is_available():
             torch.cuda.empty_cache()
         model.train()
-        running_loss = 0.0
+        # On TPU, use a device tensor to avoid float+tensor graph shape changes
+        if self.use_tpu:
+            running_loss = torch.tensor(0.0, device=self.device)
+        else:
+            running_loss = 0.0
         start_time = time.time()
         self._last_log_time = start_time
         self._tokens_processed = 0
@@ -648,7 +652,10 @@ class Trainer:
                             avg_gn, tok_sec, vram_alloc, eta_str,
                         )
 
-                    running_loss = 0.0
+                    if self.use_tpu:
+                        running_loss = torch.tensor(0.0, device=self.device)
+                    else:
+                        running_loss = 0.0
                     self._grad_norm_sum = 0.0
                     self._grad_norm_count = 0
 
