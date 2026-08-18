@@ -126,7 +126,44 @@ def _train_worker(index=None, hf_token=None):
             print(f"TPU detected ({num_cores} cores)")
             print(f"Adjusted grad_accum: {config.gradient_accumulation_steps} "
                   f"(effective batch = {config.batch_size * num_cores * new_grad_accum})")
-    elif not torch.cuda.is_available():
+    elif torch.cuda.is_available():
+        # ── Dynamic GPU VRAM auto-scaling ─────────────────────────────────
+        vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
+        original_effective_batch = config.batch_size * config.gradient_accumulation_steps
+
+        # Scale batch_size based on available VRAM
+        if vram_gb >= 70:       # H100 80GB / A100 80GB
+            new_batch = 16
+        elif vram_gb >= 35:     # A100 40GB
+            new_batch = 8
+        elif vram_gb >= 20:     # RTX 3090/4090 24GB
+            new_batch = 4
+        else:                   # T4 16GB / RTX 3060 etc.
+            new_batch = 2
+
+        config.batch_size = new_batch
+        config.gradient_accumulation_steps = max(1, original_effective_batch // new_batch)
+
+        # Scale eval_iters inversely so validation takes the same time
+        base_eval_tokens = 200 * 2  # original: 200 iters * batch_size 2
+        config.eval_iters = max(10, base_eval_tokens // new_batch)
+
+        # Enable hardware optimizations for Ampere+ GPUs (A100/H100/RTX 30xx+)
+        gpu_name = torch.cuda.get_device_name(0).upper()
+        is_ampere_plus = vram_gb >= 20 or any(tag in gpu_name for tag in ["A100", "H100", "H200", "RTX 30", "RTX 40", "RTX 50"])
+
+        if is_ampere_plus:
+            config.dtype = "bfloat16"
+            config.tf32 = True
+        # else: keep config.json defaults (float16, tf32=false)
+
+        if is_master:
+            print(f"Auto-scaled for {vram_gb:.0f}GB VRAM → "
+                  f"batch_size={config.batch_size}, "
+                  f"grad_accum={config.gradient_accumulation_steps}, "
+                  f"eval_iters={config.eval_iters}, "
+                  f"dtype={config.dtype}, tf32={config.tf32}")
+    else:
         config.device = "cpu"
         print("WARNING: No GPU or TPU found, falling back to CPU")
 
