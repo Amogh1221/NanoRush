@@ -137,9 +137,13 @@ class GPT(nn.Module):
             layer_past = past_key_values[i] if past_key_values is not None else None
             ckpt = self.config.gradient_checkpointing
             if self.training and ckpt > 0 and (i % ckpt == 0):
-                x, present = torch.utils.checkpoint.checkpoint(
-                    block, x, layer_past, use_reentrant=True
-                )
+                if x.device.type == "xla":
+                    import torch_xla.utils.checkpoint as xla_ckpt
+                    x, present = xla_ckpt.checkpoint(block, x, layer_past)
+                else:
+                    x, present = torch.utils.checkpoint.checkpoint(
+                        block, x, layer_past, use_reentrant=True
+                    )
             else:
                 x, present = block(x, layer_past)
             if use_cache:
