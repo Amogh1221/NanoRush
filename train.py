@@ -158,10 +158,10 @@ def main():
 
     if USE_TPU:
         print("=" * 56)
-        print("  nanorush — TPU v5e-8 Training Mode")
+        print("  nanorush — TPU Training Mode")
         print("=" * 56)
-        # xmp.spawn launches _train_worker on each of the 8 TPU cores
-        xmp.spawn(_train_worker, args=(args.hf_token,), nprocs=8, start_method="fork")
+        # xmp.spawn launches _train_worker on all available TPU cores (1, 4, or 8)
+        xmp.spawn(_train_worker, args=(args.hf_token,), nprocs=None, start_method="fork")
     else:
         print("=" * 56)
         print("  nanorush — GPU Training Mode")
