@@ -215,7 +215,8 @@ class Trainer:
 
         # Set device
         if self.use_tpu:
-            self.device = xm.xla_device()
+            import torch_xla
+            self.device = torch_xla.device()
         else:
             self.device = torch.device(config.device)
 

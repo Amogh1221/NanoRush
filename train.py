@@ -78,7 +78,8 @@ def setup_environment(config: GPTConfig):
         except (ImportError, AttributeError):
             is_master = xm.get_ordinal() == 0
         if is_master:
-            print(f"TPU: {xm.xla_device()}")
+            import torch_xla
+            print(f"TPU: {torch_xla.device()}")
             try:
                 import torch_xla.runtime as xr
                 cores = xr.world_size()
