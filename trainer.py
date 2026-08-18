@@ -316,6 +316,9 @@ class Trainer:
                     y.view(-1),
                 )
                 losses[k] = loss
+                if self.use_tpu:
+                    import torch_xla.core.xla_model as xm
+                    xm.mark_step()
             out[split] = losses.mean().item()
         self.model.train()
         return out
