@@ -62,23 +62,25 @@ def sync_huggingface(repo_id: str):
 
 def setup_environment(config: GPTConfig):
     if config.device == "cuda":
-        if config.tf32:
-            torch.backends.cuda.matmul.allow_tf32 = True
-            torch.backends.cudnn.allow_tf32 = True
+        torch.backends.cuda.matmul.allow_tf32 = config.tf32
+        torch.backends.cudnn.allow_tf32 = config.tf32
         torch.cuda.reset_peak_memory_stats()
         gpu_name = torch.cuda.get_device_name(0)
         vram = torch.cuda.get_device_properties(0).total_memory / 1e9
         print(f"GPU: {gpu_name} ({vram:.1f} GB)")
+        print(f"TF32 enabled: {config.tf32}")
         print(f"AMP dtype: {config.dtype}")
     elif config.device == "xla":
-        print(f"TPU: {xm.xla_device()}")
-        try:
-            import torch_xla.runtime as xr
-            cores = xr.world_size()
-        except (ImportError, AttributeError):
-            cores = xm.xrt_world_size()
-        print(f"TPU cores: {cores}")
-        print(f"Dtype: bfloat16 (native TPU)")
+        import torch_xla.core.xla_model as xm
+        if xm.get_ordinal() == 0:
+            print(f"TPU: {xm.xla_device()}")
+            try:
+                import torch_xla.runtime as xr
+                cores = xr.world_size()
+            except (ImportError, AttributeError):
+                cores = xm.xrt_world_size()
+            print(f"TPU cores: {cores}")
+            print(f"Dtype: bfloat16 (native TPU)")
 
 
 def _train_worker(index=None, hf_token=None):
