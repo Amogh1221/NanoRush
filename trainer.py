@@ -363,31 +363,39 @@ class Trainer:
                         api = HfApi(token=hf_token)
                         repo_id = "Amogh1221/nanorush_training"
                         
-                        # Push latest checkpoint
-                        api.upload_file(
-                            path_or_fileobj=path,
-                            path_in_repo="checkpoints/latest.pt",
-                            repo_id=repo_id,
-                            repo_type="dataset",
-                        )
+                        import shutil
+                        sync_path = path + ".sync"
+                        shutil.copy2(path, sync_path)
                         
-                        # Push a historical copy
-                        if step_num is not None:
+                        try:
+                            # Push latest checkpoint
                             api.upload_file(
-                                path_or_fileobj=path,
-                                path_in_repo=f"checkpoints/checkpoint-{step_num:05d}.pt",
+                                path_or_fileobj=sync_path,
+                                path_in_repo="checkpoints/latest.pt",
                                 repo_id=repo_id,
                                 repo_type="dataset",
                             )
                             
-                        # Push epoch checkpoint
-                        if epoch_name is not None:
-                            api.upload_file(
-                                path_or_fileobj=path,
-                                path_in_repo=f"checkpoints/{epoch_name}.pt",
-                                repo_id=repo_id,
-                                repo_type="dataset",
-                            )
+                            # Push a historical copy
+                            if step_num is not None:
+                                api.upload_file(
+                                    path_or_fileobj=sync_path,
+                                    path_in_repo=f"checkpoints/checkpoint-{step_num:05d}.pt",
+                                    repo_id=repo_id,
+                                    repo_type="dataset",
+                                )
+                                
+                            # Push epoch checkpoint
+                            if epoch_name is not None:
+                                api.upload_file(
+                                    path_or_fileobj=sync_path,
+                                    path_in_repo=f"checkpoints/{epoch_name}.pt",
+                                    repo_id=repo_id,
+                                    repo_type="dataset",
+                                )
+                        finally:
+                            if os.path.exists(sync_path):
+                                os.remove(sync_path)
                             
                         # Push best checkpoint
                         if is_best and os.path.exists("checkpoints/best.pt"):
