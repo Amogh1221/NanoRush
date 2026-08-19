@@ -45,7 +45,7 @@ def parse_log(path):
         m = step_pat.search(line)
         if m:
             step_num = int(m.group(1))
-            if step_num % 500 == 0:
+            if step_num % 1000 == 0:
                 steps.append((step_num, float(m.group(2)), float(m.group(3)), float(m.group(4))))
 
     eval_step = None
@@ -58,7 +58,8 @@ def parse_log(path):
         m = eval_step_pat.search(line)
         if m:
             if eval_step is not None and eval_train is not None and eval_val is not None:
-                evals.append((eval_step, eval_train, eval_val, eval_ema_val, eval_ppl))
+                if eval_step % 1000 == 0:
+                    evals.append((eval_step, eval_train, eval_val, eval_ema_val, eval_ppl))
             eval_step = int(m.group(1))
             eval_train = None
             eval_val = None
@@ -78,7 +79,8 @@ def parse_log(path):
             eval_ppl = float(m.group(1))
             
     if eval_step is not None and eval_train is not None and eval_val is not None:
-        evals.append((eval_step, eval_train, eval_val, eval_ema_val, eval_ppl))
+        if eval_step % 1000 == 0:
+            evals.append((eval_step, eval_train, eval_val, eval_ema_val, eval_ppl))
 
     return steps, evals
 
