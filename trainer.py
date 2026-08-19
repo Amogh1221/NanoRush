@@ -360,10 +360,13 @@ class Trainer:
                     # Suppress HF warnings temporarily
                     with warnings.catch_warnings():
                         warnings.simplefilter("ignore")
-                        from huggingface_hub import CommitOperationAdd, CommitOperationDelete
+                        from huggingface_hub import CommitOperationAdd, CommitOperationDelete, HfApi
                         import shutil
                         import uuid
                         import re
+                        
+                        api = HfApi(token=hf_token)
+                        repo_id = "Amogh1221/nanorush_training"
                         
                         sync_path = f"{path}.{uuid.uuid4().hex}.sync"
                         shutil.copy2(path, sync_path)
