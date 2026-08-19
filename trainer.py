@@ -364,7 +364,8 @@ class Trainer:
                         repo_id = "Amogh1221/nanorush_training"
                         
                         import shutil
-                        sync_path = path + ".sync"
+                        import uuid
+                        sync_path = f"{path}.{uuid.uuid4().hex}.sync"
                         shutil.copy2(path, sync_path)
                         
                         try:
