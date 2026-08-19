@@ -372,24 +372,25 @@ class Trainer:
                         shutil.copy2(path, sync_path)
                         
                         try:
-                            ops = []
+                            upload_ops = []
+                            delete_ops = []
                             
                             # Add latest checkpoint operation
-                            ops.append(CommitOperationAdd(
+                            upload_ops.append(CommitOperationAdd(
                                 path_in_repo="checkpoints/latest.pt",
                                 path_or_fileobj=sync_path
                             ))
                             
                             # Add historical copy operation
                             if step_num is not None:
-                                ops.append(CommitOperationAdd(
+                                upload_ops.append(CommitOperationAdd(
                                     path_in_repo=f"checkpoints/checkpoint-{step_num:05d}.pt",
                                     path_or_fileobj=sync_path
                                 ))
                                 
                             # Add epoch checkpoint operation
                             if epoch_name is not None:
-                                ops.append(CommitOperationAdd(
+                                upload_ops.append(CommitOperationAdd(
                                     path_in_repo=f"checkpoints/{epoch_name}.pt",
                                     path_or_fileobj=sync_path
                                 ))
@@ -397,18 +398,26 @@ class Trainer:
                             # Add best checkpoint operation if applicable
                             if is_best and os.path.exists("checkpoints/best.pt"):
                                 # We can upload best.pt directly since it's only updated rarely
-                                ops.append(CommitOperationAdd(
+                                upload_ops.append(CommitOperationAdd(
                                     path_in_repo="checkpoints/best.pt",
                                     path_or_fileobj="checkpoints/best.pt"
                                 ))
                                 
                             # Add logs operation
                             if os.path.exists("logs/training_log.txt"):
-                                ops.append(CommitOperationAdd(
+                                upload_ops.append(CommitOperationAdd(
                                     path_in_repo="logs/training_log.txt",
                                     path_or_fileobj="logs/training_log.txt"
                                 ))
                                 
+                            # Execute upload operations
+                            api.create_commit(
+                                repo_id=repo_id,
+                                repo_type="dataset",
+                                operations=upload_ops,
+                                commit_message=f"Upload checkpoints and logs (Step {step_num if step_num is not None else 'Unknown'})"
+                            )
+                            
                             # Determine cleanup operations (delete old checkpoints)
                             if step_num is not None:
                                 try:
@@ -418,18 +427,17 @@ class Trainer:
                                     if len(ckpt_files) > max_ckpt:
                                         to_delete = ckpt_files[:-max_ckpt]
                                         for f in to_delete:
-                                            ops.append(CommitOperationDelete(path_in_repo=f))
-                                except Exception as e:
-                                    # Ignore list errors; better to skip cleanup than crash the whole commit
+                                            delete_ops.append(CommitOperationDelete(path_in_repo=f))
+                                            
+                                    if len(delete_ops) > 0:
+                                        api.create_commit(
+                                            repo_id=repo_id, 
+                                            repo_type="dataset", 
+                                            operations=delete_ops, 
+                                            commit_message=f"Cleanup old checkpoints (keeping latest {max_ckpt})"
+                                        )
+                                except Exception:
                                     pass
-                                    
-                            # Execute all operations in a single commit (1 request instead of 4+)
-                            api.create_commit(
-                                repo_id=repo_id,
-                                repo_type="dataset",
-                                operations=ops,
-                                commit_message=f"Sync checkpoints and logs (Step {step_num if step_num is not None else 'Unknown'})"
-                            )
                             
                         finally:
                             if os.path.exists(sync_path):
