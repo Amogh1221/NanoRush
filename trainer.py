@@ -360,76 +360,77 @@ class Trainer:
                     # Suppress HF warnings temporarily
                     with warnings.catch_warnings():
                         warnings.simplefilter("ignore")
-                        api = HfApi(token=hf_token)
-                        repo_id = "Amogh1221/nanorush_training"
-                        
+                        from huggingface_hub import CommitOperationAdd, CommitOperationDelete
                         import shutil
                         import uuid
+                        import re
+                        
                         sync_path = f"{path}.{uuid.uuid4().hex}.sync"
                         shutil.copy2(path, sync_path)
                         
                         try:
-                            # Push latest checkpoint
-                            api.upload_file(
-                                path_or_fileobj=sync_path,
+                            ops = []
+                            
+                            # Add latest checkpoint operation
+                            ops.append(CommitOperationAdd(
                                 path_in_repo="checkpoints/latest.pt",
+                                path_or_fileobj=sync_path
+                            ))
+                            
+                            # Add historical copy operation
+                            if step_num is not None:
+                                ops.append(CommitOperationAdd(
+                                    path_in_repo=f"checkpoints/checkpoint-{step_num:05d}.pt",
+                                    path_or_fileobj=sync_path
+                                ))
+                                
+                            # Add epoch checkpoint operation
+                            if epoch_name is not None:
+                                ops.append(CommitOperationAdd(
+                                    path_in_repo=f"checkpoints/{epoch_name}.pt",
+                                    path_or_fileobj=sync_path
+                                ))
+                                
+                            # Add best checkpoint operation if applicable
+                            if is_best and os.path.exists("checkpoints/best.pt"):
+                                # We can upload best.pt directly since it's only updated rarely
+                                ops.append(CommitOperationAdd(
+                                    path_in_repo="checkpoints/best.pt",
+                                    path_or_fileobj="checkpoints/best.pt"
+                                ))
+                                
+                            # Add logs operation
+                            if os.path.exists("logs/training_log.txt"):
+                                ops.append(CommitOperationAdd(
+                                    path_in_repo="logs/training_log.txt",
+                                    path_or_fileobj="logs/training_log.txt"
+                                ))
+                                
+                            # Determine cleanup operations (delete old checkpoints)
+                            if step_num is not None:
+                                try:
+                                    files = api.list_repo_files(repo_id, repo_type="dataset")
+                                    ckpt_files = [f for f in files if re.match(r"checkpoints/checkpoint-\d+\.pt", f)]
+                                    ckpt_files.sort(key=lambda x: int(re.search(r"checkpoint-(\d+)\.pt", x).group(1)))
+                                    if len(ckpt_files) > max_ckpt:
+                                        to_delete = ckpt_files[:-max_ckpt]
+                                        for f in to_delete:
+                                            ops.append(CommitOperationDelete(path_in_repo=f))
+                                except Exception as e:
+                                    # Ignore list errors; better to skip cleanup than crash the whole commit
+                                    pass
+                                    
+                            # Execute all operations in a single commit (1 request instead of 4+)
+                            api.create_commit(
                                 repo_id=repo_id,
                                 repo_type="dataset",
+                                operations=ops,
+                                commit_message=f"Sync checkpoints and logs (Step {step_num if step_num is not None else 'Unknown'})"
                             )
                             
-                            # Push a historical copy
-                            if step_num is not None:
-                                api.upload_file(
-                                    path_or_fileobj=sync_path,
-                                    path_in_repo=f"checkpoints/checkpoint-{step_num:05d}.pt",
-                                    repo_id=repo_id,
-                                    repo_type="dataset",
-                                )
-                                
-                            # Push epoch checkpoint
-                            if epoch_name is not None:
-                                api.upload_file(
-                                    path_or_fileobj=sync_path,
-                                    path_in_repo=f"checkpoints/{epoch_name}.pt",
-                                    repo_id=repo_id,
-                                    repo_type="dataset",
-                                )
                         finally:
                             if os.path.exists(sync_path):
                                 os.remove(sync_path)
-                            
-                        # Push best checkpoint
-                        if is_best and os.path.exists("checkpoints/best.pt"):
-                            api.upload_file(
-                                path_or_fileobj="checkpoints/best.pt",
-                                path_in_repo="checkpoints/best.pt",
-                                repo_id=repo_id,
-                                repo_type="dataset",
-                            )
-                            
-                        # Push logs
-                        if os.path.exists("logs/training_log.txt"):
-                            api.upload_file(
-                                path_or_fileobj="logs/training_log.txt",
-                                path_in_repo="logs/training_log.txt",
-                                repo_id=repo_id,
-                                repo_type="dataset",
-                            )
-                            
-                        # Cleanup old checkpoints
-                        if step_num is not None:
-                            files = api.list_repo_files(repo_id, repo_type="dataset")
-                            ckpt_files = [f for f in files if re.match(r"checkpoints/checkpoint-\d+\.pt", f)]
-                            ckpt_files.sort(key=lambda x: int(re.search(r"checkpoint-(\d+)\.pt", x).group(1)))
-                            if len(ckpt_files) > max_ckpt:
-                                to_delete = ckpt_files[:-max_ckpt]
-                                ops = [CommitOperationDelete(path_in_repo=f) for f in to_delete]
-                                api.create_commit(
-                                    repo_id=repo_id, 
-                                    repo_type="dataset", 
-                                    operations=ops, 
-                                    commit_message=f"Cleanup old checkpoints (keeping latest {max_ckpt})"
-                                )
                                 
                     print("\n======SAVED======\n", flush=True)
                 except Exception as e:
