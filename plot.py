@@ -44,7 +44,9 @@ def parse_log(path):
     for line in lines:
         m = step_pat.search(line)
         if m:
-            steps.append((int(m.group(1)), float(m.group(2)), float(m.group(3)), float(m.group(4))))
+            step_num = int(m.group(1))
+            if step_num % 500 == 0:
+                steps.append((step_num, float(m.group(2)), float(m.group(3)), float(m.group(4))))
 
     eval_step = None
     eval_train = None
