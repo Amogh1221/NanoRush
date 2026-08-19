@@ -45,8 +45,11 @@ def sync_huggingface(repo_id: str):
     # Download latest checkpoint and logs if they exist
     print("Checking for existing checkpoints and logs...")
     try:
-        hf_hub_download(repo_id=repo_id, filename="checkpoints/latest.pt", repo_type="dataset", local_dir=".")
-        print("Successfully downloaded latest.pt")
+        if not os.path.exists("checkpoints/latest.pt"):
+            hf_hub_download(repo_id=repo_id, filename="checkpoints/latest.pt", repo_type="dataset", local_dir=".")
+            print("Successfully downloaded latest.pt")
+        else:
+            print("Found checkpoints/latest.pt locally, skipping download.")
     except Exception as e:
         print("No existing checkpoint found on HuggingFace.")
         
