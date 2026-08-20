@@ -507,6 +507,10 @@ def main():
     login(token=args.hf_token)
     os.environ["HF_TOKEN"] = args.hf_token
 
+    # Ensure tqdm progress bars are shown for all HF downloads/uploads
+    from huggingface_hub.utils import enable_progress_bars
+    enable_progress_bars()
+
     # ── Device Setup ─────────────────────────────────────────────────────
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if device.type == "cuda":
