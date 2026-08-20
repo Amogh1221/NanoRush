@@ -22,7 +22,7 @@ plt.rcParams.update({
     "axes.grid": True,
 })
 
-LOG_PATH = "log.txt"
+LOG_PATH = "training_log.txt"
 OUTPUT_PATH = "training_plot.png"
 
 def parse_log(path):

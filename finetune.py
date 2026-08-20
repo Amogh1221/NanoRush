@@ -60,11 +60,14 @@ class ChatDataset(Dataset):
     def __getitem__(self, idx):
         messages = self.data[idx]["messages"]
 
-        # Format: "User: ...\nAssistant: ...\n"
         text = ""
         for msg in messages:
-            role = "User" if msg["role"] == "user" else "Assistant"
-            text += f"{role}: {msg['content']}\n"
+            if msg["role"] == "system":
+                text += f"System: {msg['content']}\n\n"
+            elif msg["role"] == "user":
+                text += f"User: {msg['content']}\n"
+            elif msg["role"] == "assistant":
+                text += f"Assistant: {msg['content']}\n"
 
         # Tokenize and append end-of-text token
         tokens = self.tokenizer.encode(text)
@@ -112,13 +115,13 @@ def auto_batch_size(max_length=4096):
     vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
     if max_length <= 512:
         # Short sequences — can fit much larger batches
-        if vram_gb >= 70:      return 64
+        if vram_gb >= 70:      return 128  # H100 80GB (Bumped for max throughput)
         elif vram_gb >= 35:    return 32
         elif vram_gb >= 20:    return 16
         else:                  return 8
     else:
         # Full 4096 context — need smaller batches
-        if vram_gb >= 70:      return 16   # H100 80GB
+        if vram_gb >= 70:      return 32   # H100 80GB (Bumped for max throughput)
         elif vram_gb >= 35:    return 8    # A100 40GB
         elif vram_gb >= 20:    return 4    # RTX 3090/4090
         else:                  return 1    # T4 16GB
@@ -307,6 +310,42 @@ def finetune_checkpoint(
                 log_file.flush()
 
                 model.train()
+
+                # Save 500-step checkpoint (overwrite finetuned.safetensors)
+                ckpt_path = "checkpoints/finetuned.safetensors"
+                
+                # safetensors requires metadata to be strings
+                save_file(
+                    model.state_dict(), 
+                    ckpt_path, 
+                    metadata={"iter_num": str(global_step)}
+                )
+                
+                save_msg = f"  [+] Saved checkpoint: {ckpt_path}\n"
+                print(save_msg.strip())
+                log_file.write(save_msg)
+                log_file.flush()
+
+                # Sync to Hugging Face
+                if hf_token:
+                    print("  [~] Uploading checkpoint and logs to Hugging Face...")
+                    api = HfApi(token=hf_token)
+                    try:
+                        api.upload_file(
+                            path_or_fileobj=ckpt_path,
+                            path_in_repo="checkpoints/finetuned.safetensors",
+                            repo_id="Amogh1221/nanorush_training",
+                            repo_type="dataset"
+                        )
+                        api.upload_file(
+                            path_or_fileobj="logs/finetuning_logs.txt",
+                            path_in_repo="logs/finetuning_logs.txt",
+                            repo_id="Amogh1221/nanorush_training",
+                            repo_type="dataset"
+                        )
+                        print("  [+] Sync successful!")
+                    except Exception as e:
+                        print(f"  [-] Failed to sync: {e}")
 
         # End of epoch summary
         avg_epoch_loss = epoch_loss / max(epoch_steps, 1)
@@ -573,20 +612,27 @@ def main():
     print(f"Model parameters: {n_params:,}")
 
     # ── Load Dataset ─────────────────────────────────────────────────────
-    print("Downloading UltraChat 200k dataset...")
+    print("Downloading HuggingFaceTB/smoltalk dataset...")
+    
+    # Load the entire dataset
+    dataset = load_dataset("HuggingFaceTB/smoltalk", "all", split="train")
+    
     if args.subset > 0:
-        split = f"train_sft[:{args.subset}]"
+        # If testing with subset, take first N
+        dataset = dataset.select(range(args.subset))
         print(f"Using subset: {args.subset:,} conversations")
     else:
-        split = "train_sft"
         print("Using FULL dataset")
 
-    dataset = load_dataset("HuggingFaceH4/ultrachat_200k", split=split)
-    print(f"Loaded {len(dataset):,} training conversations")
-
-    # Load validation set
-    print("Loading validation set...")
-    val_dataset = load_dataset("HuggingFaceH4/ultrachat_200k", split="test_sft[:2000]")
+    # Smoltalk doesn't have a pre-split validation set, so we use the last 2000 for validation
+    val_size = min(2000, len(dataset) // 10)
+    train_size = len(dataset) - val_size
+    
+    # Select slices
+    train_dataset = dataset.select(range(train_size))
+    val_dataset = dataset.select(range(train_size, len(dataset)))
+    
+    print(f"Loaded {len(train_dataset):,} training conversations")
     print(f"Loaded {len(val_dataset):,} validation conversations")
 
     # ── Determine which checkpoints to fine-tune ─────────────────────────
@@ -607,7 +653,7 @@ def main():
         try:
             final_loss = finetune_checkpoint(
                 checkpoint_name=ckpt_name,
-                dataset=dataset,
+                dataset=train_dataset,
                 tokenizer=tokenizer,
                 config=config,
                 device=device,

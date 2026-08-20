@@ -28,9 +28,23 @@ def main():
     ckpt_path = "checkpoints/best.pt"
     if not os.path.exists(ckpt_path):
         ckpt_path = "checkpoints/latest.pt"
+        
     if not os.path.exists(ckpt_path):
-        print(f"No checkpoint found at {ckpt_path}")
-        sys.exit(1)
+        print(f"No local checkpoint found. Downloading latest model from Hugging Face...")
+        try:
+            from huggingface_hub import hf_hub_download
+            os.makedirs("checkpoints", exist_ok=True)
+            hf_hub_download(
+                repo_id="Amogh1221/nanorush_training",
+                filename="checkpoints/checkpoint-32751.pt",
+                repo_type="dataset",
+                local_dir="."
+            )
+            ckpt_path = "checkpoints/checkpoint-32751.pt"
+            print("Download complete!")
+        except Exception as e:
+            print(f"Failed to download checkpoint: {e}")
+            sys.exit(1)
 
     print(f"Loading checkpoint from {ckpt_path}")
     ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
