@@ -101,18 +101,18 @@ def format_time(seconds):
 
 
 def auto_batch_size():
-    """Pick batch size based on available VRAM."""
+    """Pick batch size based on available VRAM (tuned for max_length=512)."""
     if not torch.cuda.is_available():
         return 2
     vram_gb = torch.cuda.get_device_properties(0).total_mem / 1e9
     if vram_gb >= 70:      # H100 80GB / A100 80GB
-        return 16
+        return 64
     elif vram_gb >= 35:    # A100 40GB
-        return 8
+        return 32
     elif vram_gb >= 20:    # RTX 3090/4090
-        return 4
+        return 16
     else:                  # T4 16GB
-        return 2
+        return 8
 
 
 # ── Core Fine-Tuning ────────────────────────────────────────────────────────
@@ -163,7 +163,7 @@ def finetune_checkpoint(
 
     # ── DataLoader ───────────────────────────────────────────────────────
     batch_size = auto_batch_size()
-    chat_dataset = ChatDataset(dataset, tokenizer, max_length=config.block_size)
+    chat_dataset = ChatDataset(dataset, tokenizer, max_length=512)
     dataloader = DataLoader(
         chat_dataset,
         batch_size=batch_size,
@@ -296,7 +296,7 @@ def main():
     parser.add_argument(
         "--base_checkpoint",
         type=str,
-        default="all",
+        default="latest",
         choices=["epoch-1", "epoch-2", "latest", "all"],
         help="Which pre-training checkpoint to fine-tune (default: all)",
     )
