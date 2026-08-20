@@ -314,9 +314,16 @@ def finetune_checkpoint(
                 # Save 500-step checkpoint (overwrite finetuned.safetensors)
                 ckpt_path = "checkpoints/finetuned.safetensors"
                 
+                # Safetensors hates shared memory (wte and lm_head are tied). 
+                # We must clone the state dict to decouple them.
+                state_dict = model.state_dict()
+                for key in list(state_dict.keys()):
+                    if "lm_head.weight" in key:
+                        state_dict[key] = state_dict[key].clone()
+                        
                 # safetensors requires metadata to be strings
                 save_file(
-                    model.state_dict(), 
+                    state_dict, 
                     ckpt_path, 
                     metadata={"iter_num": str(global_step)}
                 )
