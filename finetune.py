@@ -70,16 +70,20 @@ class ChatDataset(Dataset):
         tokens = self.tokenizer.encode(text)
         tokens.append(self.tokenizer.eot_token)
 
-        # Truncate to max_length
-        if len(tokens) > self.max_length:
-            tokens = tokens[: self.max_length]
+        # Truncate to max_length + 1 so we get exactly max_length for x and y
+        if len(tokens) > self.max_length + 1:
+            tokens = tokens[: self.max_length + 1]
 
-        # Pad with zeros
-        padded = tokens + [0] * (self.max_length - len(tokens))
+        x_tokens = tokens[:-1]
+        y_tokens = tokens[1:]
 
-        # X = tokens[0..N-1], Y = tokens[1..N]
-        x = torch.tensor(padded[:-1], dtype=torch.long)
-        y = torch.tensor(padded[1:], dtype=torch.long)
+        # Pad x with 0, but pad y with -100 (PyTorch ignores -100 in cross_entropy)
+        pad_len = self.max_length - len(x_tokens)
+        x_padded = x_tokens + [0] * pad_len
+        y_padded = y_tokens + [-100] * pad_len
+
+        x = torch.tensor(x_padded, dtype=torch.long)
+        y = torch.tensor(y_padded, dtype=torch.long)
         return x, y
 
 
