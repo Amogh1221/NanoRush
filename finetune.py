@@ -193,6 +193,7 @@ def finetune_checkpoint(
         lr=max_lr,
         betas=(0.9, 0.999),
         weight_decay=0.01,
+        fused=(device.type == "cuda"),
     )
 
     # ── Training Loop ────────────────────────────────────────────────────
