@@ -211,7 +211,8 @@ def finetune_checkpoint(
         )
 
     # Open log file
-    log_file = open("finetuning_logs.txt", "a", encoding="utf-8")
+    os.makedirs("logs", exist_ok=True)
+    log_file = open("logs/finetuning_logs.txt", "a", encoding="utf-8")
     log_file.write(f"\n{'='*60}\n")
     log_file.write(f"Starting Fine-Tuning: {checkpoint_name} (Batch Size: {batch_size}, Max Length: {max_length})\n")
     log_file.write(f"Total Steps: {total_steps}, Epochs: {epochs}\n")
