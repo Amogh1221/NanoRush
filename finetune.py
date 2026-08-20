@@ -104,7 +104,7 @@ def auto_batch_size():
     """Pick batch size based on available VRAM (for full 4096 context window)."""
     if not torch.cuda.is_available():
         return 1
-    vram_gb = torch.cuda.get_device_properties(0).total_mem / 1e9
+    vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
     if vram_gb >= 70:      # H100 80GB / A100 80GB
         return 16
     elif vram_gb >= 35:    # A100 40GB
@@ -314,7 +314,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if device.type == "cuda":
         gpu_name = torch.cuda.get_device_name(0)
-        vram = torch.cuda.get_device_properties(0).total_mem / 1e9
+        vram = torch.cuda.get_device_properties(0).total_memory / 1e9
         print(f"GPU: {gpu_name} ({vram:.1f} GB)")
 
         # Enable H100/A100 Tensor Core acceleration
