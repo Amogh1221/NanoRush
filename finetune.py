@@ -101,18 +101,18 @@ def format_time(seconds):
 
 
 def auto_batch_size():
-    """Pick batch size based on available VRAM (tuned for max_length=512)."""
+    """Pick batch size based on available VRAM (for full 4096 context window)."""
     if not torch.cuda.is_available():
-        return 2
+        return 1
     vram_gb = torch.cuda.get_device_properties(0).total_mem / 1e9
     if vram_gb >= 70:      # H100 80GB / A100 80GB
-        return 64
-    elif vram_gb >= 35:    # A100 40GB
-        return 32
-    elif vram_gb >= 20:    # RTX 3090/4090
         return 16
-    else:                  # T4 16GB
+    elif vram_gb >= 35:    # A100 40GB
         return 8
+    elif vram_gb >= 20:    # RTX 3090/4090
+        return 4
+    else:                  # T4 16GB
+        return 2
 
 
 # ── Core Fine-Tuning ────────────────────────────────────────────────────────
@@ -163,7 +163,7 @@ def finetune_checkpoint(
 
     # ── DataLoader ───────────────────────────────────────────────────────
     batch_size = auto_batch_size()
-    chat_dataset = ChatDataset(dataset, tokenizer, max_length=512)
+    chat_dataset = ChatDataset(dataset, tokenizer, max_length=config.block_size)
     dataloader = DataLoader(
         chat_dataset,
         batch_size=batch_size,
