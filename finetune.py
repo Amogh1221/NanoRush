@@ -209,22 +209,7 @@ def finetune_checkpoint(
     start_time = time.time()
     eval_interval = 500
 
-    # Prepare validation dataloader
-    val_dataloader = None
-    if val_dataset is not None:
-        val_ds = ChatDataset(val_dataset, tokenizer, max_length=max_length)
-        val_dataloader = DataLoader(
-            val_ds, batch_size=batch_size, shuffle=False,
-            num_workers=num_workers, pin_memory=True, drop_last=True,
-        )
-
-    # Open log file
-    os.makedirs("logs", exist_ok=True)
-    log_file = open("logs/finetuning_logs.txt", "a", encoding="utf-8")
-    log_file.write(f"\n{'='*60}\n")
-    log_file.write(f"Starting Fine-Tuning: {checkpoint_name} (Batch Size: {batch_size}, Max Length: {max_length})\n")
-    log_file.write(f"Total Steps: {total_steps}, Epochs: {epochs}\n")
-    log_file.write(f"{'='*60}\n")
+    # Validation and logs removed for max performance
 
     for epoch in range(epochs):
         epoch_loss = 0.0
@@ -275,63 +260,22 @@ def finetune_checkpoint(
             })
 
             # ── Validation evaluation ─────────────────────────────────
-            if global_step % eval_interval == 0 and val_dataloader is not None:
-                model.eval()
-                val_losses = []
-                eval_steps = min(50, len(val_dataloader))  # Cap at 50 batches
-                with torch.no_grad():
-                    for i, (vx, vy) in enumerate(val_dataloader):
-                        if i >= eval_steps:
-                            break
-                        vx, vy = vx.to(device), vy.to(device)
-                        with torch.amp.autocast("cuda", dtype=torch.bfloat16):
-                            vlogits, _ = model(vx)
-                            vloss = F.cross_entropy(
-                                vlogits.view(-1, vlogits.size(-1)), vy.view(-1)
-                            )
-                        val_losses.append(vloss.item())
-
-                val_loss = sum(val_losses) / len(val_losses)
-                val_ppl = math.exp(min(val_loss, 20))
-                train_ppl = math.exp(min(avg_loss, 20))
-
-                val_msg = (
-                    f"\n{'═' * 50}\n"
-                    f"  VALIDATION @ Step {global_step}/{total_steps}\n"
-                    f"{'═' * 50}\n"
-                    f"  Train Loss : {avg_loss:.4f}  (ppl: {train_ppl:.2f})\n"
-                    f"  Val Loss   : {val_loss:.4f}  (ppl: {val_ppl:.2f})\n"
-                    f"  LR         : {lr:.2e}\n"
-                    f"  Elapsed    : {format_time(elapsed)}\n"
-                    f"{'═' * 50}\n"
-                )
-                print(val_msg)
-                log_file.write(val_msg)
-                log_file.flush()
-
-                model.train()
-
-                # Save 500-step checkpoint (overwrite finetuned.safetensors)
+            # ── Checkpointing ─────────────────────────────────
+            if global_step > 0 and global_step % 200 == 0:
+                # Save 200-step checkpoint (overwrite finetuned.safetensors)
                 ckpt_path = "checkpoints/finetuned.safetensors"
                 
-                # Safetensors hates shared memory (wte and lm_head are tied). 
-                # We must clone the state dict to decouple them.
                 state_dict = model.state_dict()
                 for key in list(state_dict.keys()):
                     if "lm_head.weight" in key:
                         state_dict[key] = state_dict[key].clone()
                         
-                # safetensors requires metadata to be strings
                 save_file(
                     state_dict, 
                     ckpt_path, 
                     metadata={"iter_num": str(global_step)}
                 )
-                
-                save_msg = f"  [+] Saved checkpoint: {ckpt_path}\n"
-                print(save_msg.strip())
-                log_file.write(save_msg)
-                log_file.flush()
+                print(f"  [+] Saved checkpoint: {ckpt_path}")
 
                 # Sync to Hugging Face
                 if hf_token:
@@ -344,12 +288,7 @@ def finetune_checkpoint(
                             repo_id="Amogh1221/nanorush_training",
                             repo_type="dataset"
                         )
-                        api.upload_file(
-                            path_or_fileobj="logs/finetuning_logs.txt",
-                            path_in_repo="logs/finetuning_logs.txt",
-                            repo_id="Amogh1221/nanorush_training",
-                            repo_type="dataset"
-                        )
+
                         print("  [+] Sync successful!")
                     except Exception as e:
                         print(f"  [-] Failed to sync: {e}")
@@ -362,10 +301,7 @@ def finetune_checkpoint(
             f"  Perplexity:   {math.exp(min(avg_epoch_loss, 20)):.2f}\n"
         )
         print(epoch_msg)
-        log_file.write(epoch_msg)
-        log_file.flush()
 
-    log_file.close()
 
     # ── Save HuggingFace-style model folders ────────────────────────────
     elapsed = time.time() - start_time
