@@ -49,7 +49,7 @@ AVAILABLE_CHECKPOINTS = ["epoch-1", "epoch-2", "latest"]
 class ChatDataset(Dataset):
     """Formats UltraChat conversations into tokenized training pairs."""
 
-    def __init__(self, data, tokenizer, max_length=512):
+    def __init__(self, data, tokenizer, max_length=4096):
         self.data = data
         self.tokenizer = tokenizer
         self.max_length = max_length
