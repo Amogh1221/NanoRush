@@ -300,7 +300,7 @@ def main():
         choices=["epoch-1", "epoch-2", "latest", "all"],
         help="Which pre-training checkpoint to fine-tune (default: all)",
     )
-    parser.add_argument("--epochs", type=int, default=3, help="Number of fine-tuning epochs (default: 3)")
+    parser.add_argument("--epochs", type=int, default=1, help="Number of fine-tuning epochs (default: 1)")
     parser.add_argument("--lr", type=float, default=2e-5, help="Peak learning rate (default: 2e-5)")
     parser.add_argument("--subset", type=int, default=0, help="Use N conversations (0 = full dataset)")
     parser.add_argument("--no_compile", action="store_true", help="Disable torch.compile")
