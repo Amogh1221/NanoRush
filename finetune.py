@@ -210,6 +210,13 @@ def finetune_checkpoint(
             num_workers=num_workers, pin_memory=True, drop_last=True,
         )
 
+    # Open log file
+    log_file = open("finetuning_logs.txt", "a", encoding="utf-8")
+    log_file.write(f"\n{'='*60}\n")
+    log_file.write(f"Starting Fine-Tuning: {checkpoint_name} (Batch Size: {batch_size}, Max Length: {max_length})\n")
+    log_file.write(f"Total Steps: {total_steps}, Epochs: {epochs}\n")
+    log_file.write(f"{'='*60}\n")
+
     for epoch in range(epochs):
         epoch_loss = 0.0
         epoch_steps = 0
@@ -250,12 +257,22 @@ def finetune_checkpoint(
             # Update tqdm bar with live metrics
             elapsed = time.time() - start_time
             avg_loss = epoch_loss / epoch_steps
+            tok_per_sec = (epoch_steps * batch_size * max_length) / max(elapsed, 1e-6)
             pbar.set_postfix({
                 "loss": f"{step_loss:.4f}",
                 "avg": f"{avg_loss:.4f}",
                 "lr": f"{lr:.1e}",
-                "tok/s": f"{(epoch_steps * batch_size * max_length) / elapsed:,.0f}",
+                "tok/s": f"{tok_per_sec:,.0f}",
             })
+
+            # Write to log file every 50 steps
+            if global_step % 50 == 0:
+                log_file.write(
+                    f"Step {global_step:05d}/{total_steps} | "
+                    f"Loss: {step_loss:.4f} | Avg: {avg_loss:.4f} | "
+                    f"LR: {lr:.2e} | Tok/s: {tok_per_sec:,.0f}\n"
+                )
+                log_file.flush()
 
             # ── Validation evaluation ─────────────────────────────────
             if global_step % eval_interval == 0 and val_dataloader is not None:
@@ -278,23 +295,34 @@ def finetune_checkpoint(
                 val_ppl = math.exp(min(val_loss, 20))
                 train_ppl = math.exp(min(avg_loss, 20))
 
-                hr = "═" * 50
-                print(f"\n{hr}")
-                print(f"  VALIDATION @ Step {global_step}/{total_steps}")
-                print(hr)
-                print(f"  Train Loss : {avg_loss:.4f}  (ppl: {train_ppl:.2f})")
-                print(f"  Val Loss   : {val_loss:.4f}  (ppl: {val_ppl:.2f})")
-                print(f"  LR         : {lr:.2e}")
-                print(f"  Elapsed    : {format_time(elapsed)}")
-                print(hr)
+                val_msg = (
+                    f"\n{'═' * 50}\n"
+                    f"  VALIDATION @ Step {global_step}/{total_steps}\n"
+                    f"{'═' * 50}\n"
+                    f"  Train Loss : {avg_loss:.4f}  (ppl: {train_ppl:.2f})\n"
+                    f"  Val Loss   : {val_loss:.4f}  (ppl: {val_ppl:.2f})\n"
+                    f"  LR         : {lr:.2e}\n"
+                    f"  Elapsed    : {format_time(elapsed)}\n"
+                    f"{'═' * 50}\n"
+                )
+                print(val_msg)
+                log_file.write(val_msg)
+                log_file.flush()
 
                 model.train()
 
         # End of epoch summary
         avg_epoch_loss = epoch_loss / max(epoch_steps, 1)
-        print(f"\n  ── Epoch {epoch+1} Complete ──")
-        print(f"  Average Loss: {avg_epoch_loss:.4f}")
-        print(f"  Perplexity:   {math.exp(min(avg_epoch_loss, 20)):.2f}")
+        epoch_msg = (
+            f"\n  ── Epoch {epoch+1} Complete ──\n"
+            f"  Average Loss: {avg_epoch_loss:.4f}\n"
+            f"  Perplexity:   {math.exp(min(avg_epoch_loss, 20)):.2f}\n"
+        )
+        print(epoch_msg)
+        log_file.write(epoch_msg)
+        log_file.flush()
+
+    log_file.close()
 
     # ── Save HuggingFace-style model folders ────────────────────────────
     elapsed = time.time() - start_time
