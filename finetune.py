@@ -32,6 +32,7 @@ from torch.utils.data import Dataset, DataLoader
 from datasets import load_dataset
 from safetensors.torch import save_file
 from huggingface_hub import hf_hub_download, HfApi, login
+from tqdm import tqdm
 
 from config import GPTConfig
 from model import GPT
@@ -130,6 +131,7 @@ def finetune_checkpoint(
     epochs: int = 3,
     max_lr: float = 2e-5,
     max_length: int = 4096,
+    val_dataset=None,
     hf_token: str = None,
     use_compile: bool = True,
 ):
@@ -197,14 +199,29 @@ def finetune_checkpoint(
     model.train()
     global_step = 0
     start_time = time.time()
-    best_loss = float("inf")
-    log_interval = 50
+    eval_interval = 500
+
+    # Prepare validation dataloader
+    val_dataloader = None
+    if val_dataset is not None:
+        val_ds = ChatDataset(val_dataset, tokenizer, max_length=max_length)
+        val_dataloader = DataLoader(
+            val_ds, batch_size=batch_size, shuffle=False,
+            num_workers=num_workers, pin_memory=True, drop_last=True,
+        )
 
     for epoch in range(epochs):
         epoch_loss = 0.0
         epoch_steps = 0
 
-        for step, (x, y) in enumerate(dataloader):
+        pbar = tqdm(
+            dataloader,
+            desc=f"Epoch {epoch+1}/{epochs}",
+            dynamic_ncols=True,
+            leave=True,
+        )
+
+        for step, (x, y) in enumerate(pbar):
             x, y = x.to(device), y.to(device)
 
             # Update learning rate
@@ -230,21 +247,48 @@ def finetune_checkpoint(
             epoch_steps += 1
             global_step += 1
 
-            # Logging
-            if global_step % log_interval == 0:
-                elapsed = time.time() - start_time
-                steps_per_sec = global_step / elapsed
-                eta = (total_steps - global_step) / max(steps_per_sec, 1e-6)
-                avg_loss = epoch_loss / epoch_steps
+            # Update tqdm bar with live metrics
+            elapsed = time.time() - start_time
+            avg_loss = epoch_loss / epoch_steps
+            pbar.set_postfix({
+                "loss": f"{step_loss:.4f}",
+                "avg": f"{avg_loss:.4f}",
+                "lr": f"{lr:.1e}",
+                "tok/s": f"{(epoch_steps * batch_size * max_length) / elapsed:,.0f}",
+            })
 
-                print(
-                    f"  [{checkpoint_name}] Epoch {epoch+1}/{epochs} | "
-                    f"Step {global_step}/{total_steps} | "
-                    f"Loss: {step_loss:.4f} | Avg: {avg_loss:.4f} | "
-                    f"LR: {lr:.2e} | "
-                    f"Speed: {steps_per_sec:.1f} steps/s | "
-                    f"ETA: {format_time(eta)}"
-                )
+            # ── Validation evaluation ─────────────────────────────────
+            if global_step % eval_interval == 0 and val_dataloader is not None:
+                model.eval()
+                val_losses = []
+                eval_steps = min(50, len(val_dataloader))  # Cap at 50 batches
+                with torch.no_grad():
+                    for i, (vx, vy) in enumerate(val_dataloader):
+                        if i >= eval_steps:
+                            break
+                        vx, vy = vx.to(device), vy.to(device)
+                        with torch.amp.autocast("cuda", dtype=torch.bfloat16):
+                            vlogits, _ = model(vx)
+                            vloss = F.cross_entropy(
+                                vlogits.view(-1, vlogits.size(-1)), vy.view(-1)
+                            )
+                        val_losses.append(vloss.item())
+
+                val_loss = sum(val_losses) / len(val_losses)
+                val_ppl = math.exp(min(val_loss, 20))
+                train_ppl = math.exp(min(avg_loss, 20))
+
+                hr = "═" * 50
+                print(f"\n{hr}")
+                print(f"  VALIDATION @ Step {global_step}/{total_steps}")
+                print(hr)
+                print(f"  Train Loss : {avg_loss:.4f}  (ppl: {train_ppl:.2f})")
+                print(f"  Val Loss   : {val_loss:.4f}  (ppl: {val_ppl:.2f})")
+                print(f"  LR         : {lr:.2e}")
+                print(f"  Elapsed    : {format_time(elapsed)}")
+                print(hr)
+
+                model.train()
 
         # End of epoch summary
         avg_epoch_loss = epoch_loss / max(epoch_steps, 1)
@@ -363,7 +407,12 @@ def main():
         print("Using FULL dataset")
 
     dataset = load_dataset("HuggingFaceH4/ultrachat_200k", split=split)
-    print(f"Loaded {len(dataset):,} conversations")
+    print(f"Loaded {len(dataset):,} training conversations")
+
+    # Load validation set
+    print("Loading validation set...")
+    val_dataset = load_dataset("HuggingFaceH4/ultrachat_200k", split="test_sft[:2000]")
+    print(f"Loaded {len(val_dataset):,} validation conversations")
 
     # ── Determine which checkpoints to fine-tune ─────────────────────────
     if args.base_checkpoint == "all":
@@ -390,6 +439,7 @@ def main():
                 epochs=args.epochs,
                 max_lr=args.lr,
                 max_length=args.max_length,
+                val_dataset=val_dataset,
                 hf_token=args.hf_token,
                 use_compile=not args.no_compile,
             )
