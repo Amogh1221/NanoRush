@@ -296,43 +296,189 @@ def finetune_checkpoint(
         print(f"  Average Loss: {avg_epoch_loss:.4f}")
         print(f"  Perplexity:   {math.exp(min(avg_epoch_loss, 20)):.2f}")
 
-    # ── Save as Safetensors ──────────────────────────────────────────────
+    # ── Save HuggingFace-style model folders ────────────────────────────
     elapsed = time.time() - start_time
     print(f"\n  Training complete in {format_time(elapsed)}")
 
-    os.makedirs("models", exist_ok=True)
-    model_name = f"nano-chat-{checkpoint_name}"
-    safetensors_path = f"models/{model_name}.safetensors"
+    import json
+    import shutil
 
-    print(f"  Saving {safetensors_path}...")
-    # Extract weights from compiled model if needed
     raw_model = model._orig_mod if hasattr(model, "_orig_mod") else model
-    weights = {k: v.bfloat16() for k, v in raw_model.state_dict().items()}
-    save_file(weights, safetensors_path)
+    state_dict = raw_model.state_dict()
 
-    file_size_mb = os.path.getsize(safetensors_path) / (1024 * 1024)
-    print(f"  Saved! ({file_size_mb:.0f} MB)")
+    # ── 1. Full BFloat16 Model ───────────────────────────────────────────
+    model_dir = "models/nano-chat"
+    os.makedirs(model_dir, exist_ok=True)
 
-    # ── Upload to HuggingFace ────────────────────────────────────────────
+    # Save model weights as bfloat16 safetensors
+    print(f"  Saving full model to {model_dir}/...")
+    bf16_weights = {k: v.bfloat16() for k, v in state_dict.items()}
+    save_file(bf16_weights, f"{model_dir}/model.safetensors")
+
+    # Save config.json (model architecture)
+    model_config = {
+        "model_type": "nanorush",
+        "architectures": ["NanoRushGPT"],
+        "vocab_size": config.vocab_size,
+        "n_embd": config.n_embd,
+        "n_head": config.n_head,
+        "n_layer": config.n_layer,
+        "block_size": config.block_size,
+        "dropout": config.dropout,
+        "bias": config.bias,
+        "num_parameters": sum(p.numel() for p in raw_model.parameters()),
+        "torch_dtype": "bfloat16",
+    }
+    with open(f"{model_dir}/config.json", "w") as f:
+        json.dump(model_config, f, indent=2)
+
+    # Save generation_config.json
+    gen_config = {
+        "temperature": 0.8,
+        "top_k": 50,
+        "top_p": 0.95,
+        "max_new_tokens": 512,
+        "do_sample": True,
+    }
+    with open(f"{model_dir}/generation_config.json", "w") as f:
+        json.dump(gen_config, f, indent=2)
+
+    # Copy tokenizer files
+    if os.path.exists("tokenizer/tokenizer.json"):
+        shutil.copy2("tokenizer/tokenizer.json", f"{model_dir}/tokenizer.json")
+    tokenizer_config = {
+        "model_type": "nanorush",
+        "tokenizer_class": "PreTrainedTokenizerFast",
+        "vocab_size": config.vocab_size,
+        "model_max_length": config.block_size,
+    }
+    with open(f"{model_dir}/tokenizer_config.json", "w") as f:
+        json.dump(tokenizer_config, f, indent=2)
+
+    # Model card README
+    model_size_mb = os.path.getsize(f"{model_dir}/model.safetensors") / (1024 * 1024)
+    readme = f"""# NanoRush Chat (BFloat16)
+
+A 283M parameter GPT-style language model fine-tuned for conversation.
+
+## Model Details
+- **Parameters:** {model_config['num_parameters']:,}
+- **Architecture:** {config.n_layer} layers, {config.n_head} heads, {config.n_embd} dim
+- **Context Window:** {config.block_size} tokens
+- **Precision:** BFloat16
+- **Size:** {model_size_mb:.0f} MB
+
+## Training
+- **Base:** NanoRush pre-trained on custom dataset ({pretrain_step} steps)
+- **Fine-tuned on:** UltraChat 200k (SFT)
+- **Epochs:** {epochs}
+- **Learning Rate:** {max_lr}
+- **Final Loss:** {avg_epoch_loss:.4f}
+- **Perplexity:** {math.exp(min(avg_epoch_loss, 20)):.2f}
+
+## Usage
+```python
+from model import GPT
+from config import GPTConfig
+from tokenizer import Tokenizer
+from safetensors.torch import load_file
+
+config = GPTConfig()
+tokenizer = Tokenizer()
+config.vocab_size = tokenizer.vocab_size
+model = GPT(config)
+model.load_state_dict(load_file("model.safetensors"))
+```
+"""
+    with open(f"{model_dir}/README.md", "w") as f:
+        f.write(readme)
+
+    print(f"  ✓ Full model saved ({model_size_mb:.0f} MB)")
+
+    # ── 2. INT8 Quantized Model ──────────────────────────────────────────
+    quant_dir = "models/nano-chat-quantized"
+    os.makedirs(quant_dir, exist_ok=True)
+
+    print(f"  Quantizing to INT8...")
+    quantized_weights = {}
+    for name, param in state_dict.items():
+        # Only quantize large weight matrices (2D+), keep biases/norms as float16
+        if param.dim() >= 2:
+            p_float = param.float()
+            scale = p_float.abs().max() / 127.0
+            q = (p_float / scale).round().clamp(-128, 127).to(torch.int8)
+            quantized_weights[name] = q
+            quantized_weights[f"{name}.__scale__"] = scale.to(torch.float16)
+        else:
+            quantized_weights[name] = param.to(torch.float16)
+
+    save_file(quantized_weights, f"{quant_dir}/model_int8.safetensors")
+
+    # Copy config files to quantized folder too
+    quant_config = {**model_config, "torch_dtype": "int8", "quantization": "per-tensor-symmetric"}
+    with open(f"{quant_dir}/config.json", "w") as f:
+        json.dump(quant_config, f, indent=2)
+    with open(f"{quant_dir}/generation_config.json", "w") as f:
+        json.dump(gen_config, f, indent=2)
+    if os.path.exists("tokenizer/tokenizer.json"):
+        shutil.copy2("tokenizer/tokenizer.json", f"{quant_dir}/tokenizer.json")
+    with open(f"{quant_dir}/tokenizer_config.json", "w") as f:
+        json.dump(tokenizer_config, f, indent=2)
+
+    quant_size_mb = os.path.getsize(f"{quant_dir}/model_int8.safetensors") / (1024 * 1024)
+
+    quant_readme = f"""# NanoRush Chat (INT8 Quantized)
+
+A 283M parameter GPT model, quantized to INT8 for smaller size and faster inference.
+
+## Model Details
+- **Parameters:** {model_config['num_parameters']:,}
+- **Quantization:** Per-tensor symmetric INT8
+- **Size:** {quant_size_mb:.0f} MB (vs {model_size_mb:.0f} MB full)
+
+## Loading
+```python
+from safetensors.torch import load_file
+
+data = load_file("model_int8.safetensors")
+state_dict = {{}}
+for name, tensor in data.items():
+    if name.endswith(".__scale__"):
+        continue
+    scale_key = f"{{name}}.__scale__"
+    if scale_key in data:
+        state_dict[name] = tensor.float() * data[scale_key].float()
+    else:
+        state_dict[name] = tensor
+model.load_state_dict(state_dict)
+```
+"""
+    with open(f"{quant_dir}/README.md", "w") as f:
+        f.write(quant_readme)
+
+    print(f"  ✓ Quantized model saved ({quant_size_mb:.0f} MB)")
+    print(f"  ✓ Compression: {model_size_mb:.0f} MB → {quant_size_mb:.0f} MB ({quant_size_mb/model_size_mb*100:.0f}%)")
+
+    # ── Upload both folders to HuggingFace ────────────────────────────────
     if hf_token:
-        print(f"  Uploading {model_name} to HuggingFace...")
-        try:
-            api = HfApi(token=hf_token)
-            api.upload_file(
-                path_or_fileobj=safetensors_path,
-                path_in_repo=f"models/{model_name}.safetensors",
-                repo_id=HF_REPO,
-                repo_type="dataset",
-                commit_message=f"Upload fine-tuned model: {model_name} "
-                               f"({epochs} epochs, lr={max_lr}, "
-                               f"loss={avg_epoch_loss:.4f})",
-            )
-            print(f"  ✓ Uploaded to {HF_REPO}/models/{model_name}.safetensors")
-        except Exception as e:
-            print(f"  ✗ Upload failed: {e}")
+        api = HfApi(token=hf_token)
+        for folder, label in [(model_dir, "full"), (quant_dir, "quantized")]:
+            print(f"  Uploading {label} model folder to HuggingFace...")
+            try:
+                api.upload_folder(
+                    folder_path=folder,
+                    path_in_repo=folder,
+                    repo_id=HF_REPO,
+                    repo_type="dataset",
+                    commit_message=f"Upload {label} fine-tuned model "
+                                   f"({epochs} epoch, lr={max_lr}, loss={avg_epoch_loss:.4f})",
+                )
+                print(f"  ✓ Uploaded {folder}/ to {HF_REPO}")
+            except Exception as e:
+                print(f"  ✗ Upload failed for {label}: {e}")
 
-    # ── Cleanup GPU memory for next model ────────────────────────────────
-    del model, optimizer, weights
+    # ── Cleanup GPU memory ───────────────────────────────────────────────
+    del model, optimizer, bf16_weights, quantized_weights
     torch.cuda.empty_cache()
 
     return avg_epoch_loss
