@@ -115,13 +115,13 @@ def auto_batch_size(max_length=4096):
     vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
     if max_length <= 512:
         # Short sequences — can fit much larger batches
-        if vram_gb >= 70:      return 128  # H100 80GB (Bumped for max throughput)
+        if vram_gb >= 70:      return 64  # H100 80GB (Bumped for max throughput)
         elif vram_gb >= 35:    return 32
         elif vram_gb >= 20:    return 16
         else:                  return 8
     else:
         # Full 4096 context — need smaller batches
-        if vram_gb >= 70:      return 32   # H100 80GB (Bumped for max throughput)
+        if vram_gb >= 70:      return 16   # H100 80GB (Bumped for max throughput)
         elif vram_gb >= 35:    return 8    # A100 40GB
         elif vram_gb >= 20:    return 4    # RTX 3090/4090
         else:                  return 1    # T4 16GB
