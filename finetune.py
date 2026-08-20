@@ -266,15 +266,6 @@ def finetune_checkpoint(
                 "tok/s": f"{tok_per_sec:,.0f}",
             })
 
-            # Write to log file every 50 steps
-            if global_step % 50 == 0:
-                log_file.write(
-                    f"Step {global_step:05d}/{total_steps} | "
-                    f"Loss: {step_loss:.4f} | Avg: {avg_loss:.4f} | "
-                    f"LR: {lr:.2e} | Tok/s: {tok_per_sec:,.0f}\n"
-                )
-                log_file.flush()
-
             # ── Validation evaluation ─────────────────────────────────
             if global_step % eval_interval == 0 and val_dataloader is not None:
                 model.eval()
