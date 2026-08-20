@@ -100,19 +100,23 @@ def format_time(seconds):
     return f"{h:02d}:{m:02d}:{s:02d}"
 
 
-def auto_batch_size():
-    """Pick batch size based on available VRAM (for full 4096 context window)."""
+def auto_batch_size(max_length=4096):
+    """Pick batch size based on available VRAM and sequence length."""
     if not torch.cuda.is_available():
         return 1
     vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
-    if vram_gb >= 70:      # H100 80GB / A100 80GB
-        return 16
-    elif vram_gb >= 35:    # A100 40GB
-        return 8
-    elif vram_gb >= 20:    # RTX 3090/4090
-        return 4
-    else:                  # T4 16GB
-        return 2
+    if max_length <= 512:
+        # Short sequences — can fit much larger batches
+        if vram_gb >= 70:      return 64
+        elif vram_gb >= 35:    return 32
+        elif vram_gb >= 20:    return 16
+        else:                  return 8
+    else:
+        # Full 4096 context — need smaller batches
+        if vram_gb >= 70:      return 16   # H100 80GB
+        elif vram_gb >= 35:    return 8    # A100 40GB
+        elif vram_gb >= 20:    return 4    # RTX 3090/4090
+        else:                  return 1    # T4 16GB
 
 
 # ── Core Fine-Tuning ────────────────────────────────────────────────────────
@@ -125,6 +129,7 @@ def finetune_checkpoint(
     device: torch.device,
     epochs: int = 3,
     max_lr: float = 2e-5,
+    max_length: int = 4096,
     hf_token: str = None,
     use_compile: bool = True,
 ):
@@ -162,13 +167,14 @@ def finetune_checkpoint(
         model = torch.compile(model, mode="default")
 
     # ── DataLoader ───────────────────────────────────────────────────────
-    batch_size = auto_batch_size()
-    chat_dataset = ChatDataset(dataset, tokenizer, max_length=config.block_size)
+    batch_size = auto_batch_size(max_length)
+    chat_dataset = ChatDataset(dataset, tokenizer, max_length=max_length)
+    num_workers = min(4, os.cpu_count() or 1)
     dataloader = DataLoader(
         chat_dataset,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=4,
+        num_workers=num_workers,
         pin_memory=True,
         drop_last=True,
     )
@@ -303,6 +309,7 @@ def main():
     parser.add_argument("--epochs", type=int, default=1, help="Number of fine-tuning epochs (default: 1)")
     parser.add_argument("--lr", type=float, default=2e-5, help="Peak learning rate (default: 2e-5)")
     parser.add_argument("--subset", type=int, default=0, help="Use N conversations (0 = full dataset)")
+    parser.add_argument("--max_length", type=int, default=4096, help="Max sequence length (default: 4096, use 512 for quick Colab testing)")
     parser.add_argument("--no_compile", action="store_true", help="Disable torch.compile")
     args = parser.parse_args()
 
@@ -382,6 +389,7 @@ def main():
                 device=device,
                 epochs=args.epochs,
                 max_lr=args.lr,
+                max_length=args.max_length,
                 hf_token=args.hf_token,
                 use_compile=not args.no_compile,
             )
