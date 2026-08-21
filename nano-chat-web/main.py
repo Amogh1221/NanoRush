@@ -41,6 +41,10 @@ class StopOnUser(StoppingCriteria):
         tail = tokenizer.decode(generated_tokens[-10:])
         return "\nUser:" in tail or "User:" in tail
 
+@app.get("/")
+async def health_check():
+    return {"status": "ok"}
+
 @app.post("/chat")
 async def chat(request: Request):
     data = await request.json()
@@ -64,9 +68,6 @@ async def chat(request: Request):
     generation_kwargs = dict(
         **inputs,
         max_new_tokens=512,
-        temperature=0.0,
-        top_k=50,
-        top_p=0.95,
         do_sample=False,
         repetition_penalty=1.15,
         pad_token_id=tokenizer.eos_token_id,
