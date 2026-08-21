@@ -9,10 +9,18 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers import StoppingCriteria, StoppingCriteriaList
 from transformers.generation.streamers import TextIteratorStreamer
 
+from fastapi.middleware.cors import CORSMiddleware
+
 app = FastAPI()
 
-# Mount the static directory to serve HTML, CSS, and JS
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# Allow Next.js (Vercel) frontend to talk to this backend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 print("Loading NanoRush Chat...")
 # It downloads/caches Amogh1221/nano-chat locally on first run!
