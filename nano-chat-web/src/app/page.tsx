@@ -138,7 +138,7 @@ export default function ChatShell() {
   );
 
   return (
-    <div className="flex flex-col h-full bg-[var(--bg-primary)] w-full">
+    <div className="flex flex-col h-[100dvh] bg-[var(--bg-primary)] w-full">
       
       {/* Top Bar */}
       <header className="h-14 border-b border-[var(--border-subtle)] flex items-center px-4 justify-between sticky top-0 bg-[var(--bg-primary)] z-10 shrink-0">
