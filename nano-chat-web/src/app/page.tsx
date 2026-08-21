@@ -146,10 +146,11 @@ export default function ChatShell() {
           <h1 className="font-semibold text-[var(--text-primary)]">NanoRush</h1>
           <span className="text-xs bg-[var(--bg-tertiary)] px-2 py-0.5 rounded text-[var(--text-secondary)]">283M</span>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="text-xs text-[var(--text-secondary)] hidden sm:flex items-center gap-2">
-            <span>Context Window: ~{Math.min(100, Math.round((JSON.stringify(messages).length / 4) / 4096 * 100))}%</span>
-            <div className="w-24 h-2 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
+        <div className="flex items-center gap-2 sm:gap-4">
+          <div className="text-[10px] sm:text-xs text-[var(--text-secondary)] flex items-center gap-1 sm:gap-2">
+            <span className="hidden sm:inline">Context Window:</span>
+            <span>~{Math.min(100, Math.round((JSON.stringify(messages).length / 4) / 4096 * 100))}%</span>
+            <div className="w-12 sm:w-24 h-1.5 sm:h-2 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
                <div className="h-full bg-[var(--accent)]" style={{ width: `${Math.min(100, (JSON.stringify(messages).length / 4) / 4096 * 100)}%` }}></div>
             </div>
           </div>
@@ -167,8 +168,8 @@ export default function ChatShell() {
       {/* Message List */}
       <main className={`flex-1 overflow-y-auto p-4 md:p-8 ${messages.length === 0 ? 'flex flex-col justify-center items-center' : ''}`}>
         {messages.length === 0 ? (
-          <div className="w-full flex flex-col items-center justify-center -mt-20">
-            <h2 className="text-3xl font-semibold text-[var(--text-primary)] mb-8">What can I help you with?</h2>
+          <div className="w-full flex flex-col items-center justify-center mt-0 sm:-mt-20">
+            <h2 className="text-2xl sm:text-3xl font-semibold text-[var(--text-primary)] mb-8 text-center px-4">What can I help you with?</h2>
             {composer}
           </div>
         ) : (
