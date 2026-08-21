@@ -27,8 +27,8 @@ print("Loading NanoRush Chat...")
 tokenizer = AutoTokenizer.from_pretrained("Amogh1221/nano-chat")
 model = AutoModelForCausalLM.from_pretrained(
     "Amogh1221/nano-chat", 
-    torch_dtype=torch.float16, 
-    device_map="auto"
+    torch_dtype=torch.float32, 
+    device_map="cpu"
 )
 
 system_prompt = "You are NanoRush, an AI assistant created by Amogh Gupta. You are a helpful, respectful, and intelligent conversational partner. You must never pretend to be a human, and you must carefully pay attention to the conversation history."
@@ -81,13 +81,10 @@ async def chat(request: Request):
     thread = threading.Thread(target=model.generate, kwargs=generation_kwargs)
     thread.start()
     
-    async def event_generator():
+    def event_generator():
         for text in streamer:
             # EventSourceResponse automatically formats strings into SSE events,
             # so we just yield the raw JSON string!
             yield json.dumps({'chunk': text})
-            
-            # Tiny sleep to allow the event loop to flush the chunk over network
-            await asyncio.sleep(0.01)
             
     return EventSourceResponse(event_generator())
