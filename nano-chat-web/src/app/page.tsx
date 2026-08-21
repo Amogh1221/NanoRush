@@ -168,9 +168,8 @@ export default function ChatShell() {
       {/* Message List */}
       <main className={`flex-1 overflow-y-auto p-4 md:p-8 ${messages.length === 0 ? 'flex flex-col justify-center items-center' : ''}`}>
         {messages.length === 0 ? (
-          <div className="w-full flex flex-col items-center justify-center mt-0 sm:-mt-20">
-            <h2 className="text-2xl sm:text-3xl font-semibold text-[var(--text-primary)] mb-8 text-center px-4">What can I help you with?</h2>
-            {composer}
+          <div className="w-full flex flex-col items-center justify-center">
+            <h2 className="text-2xl sm:text-3xl font-semibold text-[var(--text-primary)] text-center px-4">What can I help you with?</h2>
           </div>
         ) : (
           <div className="max-w-3xl mx-auto space-y-6">
@@ -195,11 +194,9 @@ export default function ChatShell() {
       </main>
 
       {/* Composer (Bottom Docked) */}
-      {messages.length > 0 && (
-        <div className="p-4 bg-gradient-to-t from-[var(--bg-primary)] to-transparent shrink-0">
-          {composer}
-        </div>
-      )}
+      <div className="p-4 bg-gradient-to-t from-[var(--bg-primary)] to-transparent shrink-0">
+        {composer}
+      </div>
     </div>
   );
 }
