@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NanoRush Chat</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+    <div class="app-layout">
+        <header class="top-bar">
+            <h1>NanoRush <span>283M</span></h1>
+        </header>
+        
+        <main id="chat-box">
+            <div class="message assistant">
+                <div class="message-inner">
+                    <div class="avatar">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10H12V2z"></path><path d="M12 12 2.1 7.1"></path><path d="M12 12l9.9 4.9"></path></svg>
+                    </div>
+                    <div class="message-content">Hello! I am NanoRush. How can I help you today?</div>
+                </div>
+            </div>
+        </main>
+
+        <div class="input-wrapper">
+            <div class="input-container">
+                <textarea id="user-input" placeholder="Message NanoRush..." rows="1"></textarea>
+                <button id="send-btn">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 20V4l19 8-19 8zm2-3 11.85-5L5 7v3.5l8.53 1.5L5 13.5V17z"/></svg>
+                </button>
+            </div>
+            <div class="disclaimer">NanoRush can make mistakes. Verify important information.</div>
+        </div>
+    </div>
+    <script src="/static/script.js"></script>
+</body>
+</html>

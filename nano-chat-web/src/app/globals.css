@@ -1,0 +1,63 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg-primary: var(--bg-primary);
+  --color-bg-secondary: var(--bg-secondary);
+  --color-bg-tertiary: var(--bg-tertiary);
+  --color-border-subtle: var(--border-subtle);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-danger: var(--danger);
+  --color-warning: var(--warning);
+  --color-success: var(--success);
+}
+
+@layer base {
+  :root {
+    /* Neutrals */
+    --bg-primary: #ffffff;
+    --bg-secondary: #f7f7f8;
+    --bg-tertiary: #ececf1;
+    --border-subtle: #e5e5e5;
+    --text-primary: #0d0d0d;
+    --text-secondary: #6e6e80;
+
+    /* Brand / accent */
+    --accent: #10a37f;
+    --accent-hover: #0e8f6f;
+
+    /* Semantic */
+    --danger: #d92d20;
+    --warning: #f79009;
+    --success: #12b76a;
+
+    /* Radius & spacing scale */
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 16px;
+    
+    /* Type */
+    --font-sans: 'Inter', -apple-system, system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  }
+
+  [data-theme="dark"], .dark {
+    --bg-primary: #1a1a1a;
+    --bg-secondary: #212121;
+    --bg-tertiary: #2f2f2f;
+    --border-subtle: #3a3a3a;
+    --text-primary: #ececf1;
+    --text-secondary: #a6a6b0;
+  }
+
+  body {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    line-height: 1.6;
+    margin: 0;
+    padding: 0;
+  }
+}

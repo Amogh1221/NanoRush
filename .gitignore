@@ -51,3 +51,11 @@ docs/wiki.md
 # Archives
 *.zip
 scaleing_plan.md
+
+# Large files & UI
+models/
+*.safetensors
+*.png
+*.ipynb
+node_modules/
+.next/
