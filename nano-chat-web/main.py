@@ -31,6 +31,12 @@ model = AutoModelForCausalLM.from_pretrained(
     device_map="cpu"
 )
 
+print("Applying INT8 dynamic quantization for CPU speedup...")
+# Compress all Linear layers to 8-bit integers on the fly
+model = torch.ao.quantization.quantize_dynamic(
+    model, {torch.nn.Linear}, dtype=torch.qint8
+)
+
 system_prompt = "You are NanoRush, an AI assistant created by Amogh Gupta. You are a helpful, respectful, and intelligent conversational partner. You must never pretend to be a human, and you must carefully pay attention to the conversation history."
 
 class StopOnUser(StoppingCriteria):
