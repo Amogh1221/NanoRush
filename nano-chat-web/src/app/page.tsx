@@ -16,6 +16,14 @@ export default function ChatShell() {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Background wake-up ping on load
+  useEffect(() => {
+    // This simple request hits the health check endpoint.
+    // Even if it fails due to CORS (which HF 503 pages often do),
+    // the request itself signals Hugging Face to wake the space!
+    fetch('https://amogh1221-nanorush.hf.space/').catch(() => {});
+  }, []);
+
   const handleSubmit = async () => {
     if (!input.trim() || isStreaming) return;
     
@@ -30,11 +38,48 @@ export default function ChatShell() {
     setStreaming(true);
 
     try {
-      const res = await fetch('https://amogh1221-nanorush.hf.space/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: payloadMessages }),
-      });
+      let res: Response | null = null;
+      let isSleeping = false;
+
+      // Retry loop for waking up the HF space (up to 150 seconds)
+      for (let i = 0; i < 15; i++) {
+        try {
+          res = await fetch('https://amogh1221-nanorush.hf.space/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ messages: payloadMessages }),
+          });
+
+          if (res.ok) {
+            break; // Success!
+          }
+          if (res.status !== 503 && res.status !== 504) {
+            break; // Some other error, don't retry for sleeping
+          }
+        } catch (e) {
+          // HF 503 pages often lack CORS headers, causing fetch to throw a TypeError.
+          // We catch it here and treat it as sleeping.
+        }
+
+        // If we reach here, the space is likely sleeping.
+        if (!isSleeping) {
+          isSleeping = true;
+          updateLastMessage("⏳ *Backend is sleeping. Waking up model (this takes ~1-2 minutes)...*");
+        }
+        // Wait 10 seconds before trying again
+        await new Promise(r => setTimeout(r, 10000));
+      }
+
+      if (!res || !res.ok) {
+        updateLastMessage("Error connecting to NanoRush. The backend might be offline.");
+        setStreaming(false);
+        return;
+      }
+
+      // If we were sleeping and now succeeded, clear the loading message
+      if (isSleeping) {
+        updateLastMessage(""); 
+      }
 
       const reader = res.body?.getReader();
       const decoder = new TextDecoder('utf-8');

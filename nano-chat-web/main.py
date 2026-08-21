@@ -23,10 +23,10 @@ app.add_middleware(
 )
 
 print("Loading NanoRush Chat...")
-# It downloads/caches Amogh1221/nano-chat locally on first run!
-tokenizer = AutoTokenizer.from_pretrained("Amogh1221/nano-chat")
+# It downloads/caches Amogh1221/NanoRush locally on first run!
+tokenizer = AutoTokenizer.from_pretrained("Amogh1221/NanoRush")
 model = AutoModelForCausalLM.from_pretrained(
-    "Amogh1221/nano-chat", 
+    "Amogh1221/NanoRush", 
     torch_dtype=torch.float32, 
     device_map="cpu"
 )
