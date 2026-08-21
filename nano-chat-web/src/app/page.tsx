@@ -30,7 +30,7 @@ export default function ChatShell() {
     setStreaming(true);
 
     try {
-      const res = await fetch('/api/chat', {
+      const res = await fetch('https://amogh1221-nanorush.hf.space/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: payloadMessages }),
